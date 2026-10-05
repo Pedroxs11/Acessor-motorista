@@ -28,24 +28,32 @@ class IFoodAdapter extends GenericPlatformAdapter {
 class RappiAdapter extends GenericPlatformAdapter {
   const RappiAdapter()
       : super(
-          packageName: 'com.grability.rappi',
-          platform: PlatformType.ifood,
+          packageName: 'com.rappi.storekeeper',
+          platform: PlatformType.rappi,
         );
 }
 
 class LalamoveAdapter extends GenericPlatformAdapter {
   const LalamoveAdapter()
       : super(
-          packageName: 'com.lalamove.global.driver',
-          platform: PlatformType.ifood,
+          packageName: 'com.lalamove.global.driver.sea',
+          platform: PlatformType.lalamove,
         );
 }
 
 class LoggiAdapter extends GenericPlatformAdapter {
   const LoggiAdapter()
       : super(
-          packageName: 'com.loggi.driver',
-          platform: PlatformType.ifood,
+          packageName: 'com.loggi.driverapp',
+          platform: PlatformType.loggi,
+        );
+}
+
+class BorzoAdapter extends GenericPlatformAdapter {
+  const BorzoAdapter()
+      : super(
+          packageName: 'global.dostavista.courier',
+          platform: PlatformType.borzo,
         );
 }
 
@@ -57,6 +65,7 @@ class PlatformAdapterRegistry {
     RappiAdapter(),
     LalamoveAdapter(),
     LoggiAdapter(),
+    BorzoAdapter(),
   ];
 
   static GenericPlatformAdapter? byPackage(String packageName) {
