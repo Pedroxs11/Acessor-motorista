@@ -1,6 +1,26 @@
-enum PlatformType { uber, nineNine, ifood, unknown }
+enum PlatformType {
+  uber,
+  nineNine,
+  ifood,
+  rappi,
+  lalamove,
+  loggi,
+  nineNineDelivery,
+  borzo,
+  unknown,
+}
 
-enum RideCategory { uberX, comfort, black, priority, pop, plus, moto, delivery, unknown }
+enum RideCategory {
+  uberX,
+  comfort,
+  black,
+  priority,
+  pop,
+  plus,
+  moto,
+  delivery,
+  unknown,
+}
 
 enum OfferType { standard, negotiates, unknown }
 
