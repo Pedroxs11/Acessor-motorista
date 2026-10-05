@@ -1,21 +1,21 @@
 import '../core/category_rules.dart';
 import '../core/offer_analyzer.dart';
 import '../core/offer_decision.dart';
-import 'text_offer_reader.dart';
+import 'platform_adapters.dart';
 
-/// Pipeline comum: texto capturado -> oferta normalizada -> analise.
-/// A captura real de Android/iOS sera conectada acima desta camada.
 class OfferPipeline {
-  final TextOfferReader reader;
   final OfferAnalyzer analyzer;
 
-  const OfferPipeline({
-    this.reader = const TextOfferReader(),
-    this.analyzer = const OfferAnalyzer(),
-  });
+  const OfferPipeline({this.analyzer = const OfferAnalyzer()});
 
-  OfferDecision? process(String capturedText) {
-    final offer = reader.read(capturedText);
+  OfferDecision? process({
+    required String packageName,
+    required String capturedText,
+  }) {
+    final adapter = PlatformAdapterRegistry.byPackage(packageName);
+    if (adapter == null) return null;
+
+    final offer = adapter.parse(capturedText);
     if (offer == null) return null;
 
     final rule = DefaultCategoryRules.forCategory(offer.category);
