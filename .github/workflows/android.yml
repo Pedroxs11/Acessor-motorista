@@ -19,6 +19,13 @@ jobs:
           flutter-version: '3.29.3'
           channel: stable
 
+      - name: Generate missing Flutter Android scaffolding
+        run: |
+          if [ ! -f android/settings.gradle ] || [ ! -f android/app/build.gradle ]; then
+            flutter create --platforms=android /tmp/flutter_android_scaffold
+            cp -Rn /tmp/flutter_android_scaffold/android/. android/
+          fi
+
       - name: Flutter pub get
         run: flutter pub get
 
