@@ -10,9 +10,10 @@ class OfferAccessibilityService : AccessibilityService() {
         "com.ubercab.driver",
         "com.app99.driver",
         "br.com.ifood.driver.app",
-        "com.grability.rappi",
-        "com.lalamove.global.driver",
-        "com.loggi.driver"
+        "com.rappi.storekeeper",
+        "com.lalamove.global.driver.sea",
+        "com.loggi.driverapp",
+        "global.dostavista.courier"
     )
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -36,13 +37,18 @@ class OfferAccessibilityService : AccessibilityService() {
 
         fun visit(current: AccessibilityNodeInfo?) {
             if (current == null) return
+
             current.text?.toString()?.trim()?.let {
                 if (it.isNotEmpty()) result.append(it).append(' ')
             }
+
             current.contentDescription?.toString()?.trim()?.let {
                 if (it.isNotEmpty()) result.append(it).append(' ')
             }
-            for (i in 0 until current.childCount) visit(current.getChild(i))
+
+            for (i in 0 until current.childCount) {
+                visit(current.getChild(i))
+            }
         }
 
         visit(node)
