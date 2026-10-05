@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Acessor Motorista</string>
+    <string name="accessibility_service_description">Ler somente os dados visíveis das ofertas dos apps de motorista para calcular uma recomendação.</string>
+</resources>
