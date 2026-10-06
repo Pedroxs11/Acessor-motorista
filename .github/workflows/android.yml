@@ -24,6 +24,7 @@ jobs:
           if [ ! -f android/settings.gradle ] || [ ! -f android/app/build.gradle ]; then
             flutter create --platforms=android /tmp/flutter_android_scaffold
             cp -Rn /tmp/flutter_android_scaffold/android/. android/
+            sed -i 's/com.example.flutter_android_scaffold/com.acessor.motorista/g' android/app/build.gradle
           fi
 
       - name: Flutter pub get
