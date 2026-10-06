@@ -51,12 +51,12 @@ class OfferAnalyzer {
 
     if (rule.minReaisPerKm != null &&
         offer.reaisPerKm < rule.minReaisPerKm!) {
-      reasons.add('R$/km abaixo do minimo');
+      reasons.add('R\$/km abaixo do minimo');
     }
 
     if (rule.minReaisPerHour != null &&
         offer.reaisPerHour < rule.minReaisPerHour!) {
-      reasons.add('R$/hora abaixo do minimo');
+      reasons.add('R\$/hora abaixo do minimo');
     }
 
     return AnalysisResult(
