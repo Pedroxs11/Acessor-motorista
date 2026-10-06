@@ -32,9 +32,9 @@ class TextOfferReader {
 
     if (value == null || numbers.isEmpty) return null;
 
-    final pickupKm = numbers.length > 1 ? numbers.first : 0;
+    final pickupKm = numbers.length > 1 ? numbers.first : 0.0;
     final tripKm = numbers.length > 1 ? numbers[1] : numbers.first;
-    final pickupMin = times.length > 1 ? times.first : 0;
+    final pickupMin = times.length > 1 ? times.first : 0.0;
     final tripMin = times.length > 1 ? times[1] : (times.isNotEmpty ? times.first : 0);
 
     return RideOffer(
