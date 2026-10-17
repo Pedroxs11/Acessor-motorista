@@ -1,4 +1,4 @@
-name: Android APK
+name: Android APK e AAB
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
 
       - name: Generate missing Flutter Android scaffolding
         run: |
-          if [ ! -f android/settings.gradle ] || [ ! -f android/app/build.gradle ]; then
+          if [ ! -f android/settings.gradle ] && [ ! -f android/settings.gradle.kts ] || [ ! -f android/app/build.gradle ] && [ ! -f android/app/build.gradle.kts ]; then
             flutter create --platforms=android /tmp/flutter_android_scaffold
             cp -Rn /tmp/flutter_android_scaffold/android/. android/
             find android/app -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -exec sed -i 's/com\.example\.flutter_android_scaffold/com\.acessor\.motorista/g' {} +
@@ -33,11 +33,126 @@ jobs:
       - name: Flutter analyze
         run: flutter analyze
 
-      - name: Build APK
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          # certutil -encode wraps the Base64 data in BEGIN/END CERTIFICATE lines.
+          printf '%s\n' "$ANDROID_KEYSTORE_BASE64" | sed '/^-----BEGIN CERTIFICATE-----$/d; /^-----END CERTIFICATE-----$/d' | base64 --decode > android/app/upload-keystore.jks
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          def escape_property(value):
+              value = value.replace("\\", "\\\\")
+              for char in (":", "=", "#", "!"):
+                  value = value.replace(char, "\\" + char)
+              if value.startswith(" "):
+                  value = "\\" + value
+              return value
+
+          props = {
+              "storePassword": os.environ["ANDROID_KEYSTORE_PASSWORD"],
+              "keyPassword": os.environ["ANDROID_KEY_PASSWORD"],
+              "keyAlias": os.environ["ANDROID_KEY_ALIAS"],
+              "storeFile": "upload-keystore.jks",
+          }
+          Path("android/key.properties").write_text(
+              "".join(f"{key}={escape_property(value)}\n" for key, value in props.items()),
+              encoding="utf-8",
+          )
+
+          candidates = [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]
+          gradle = next((p for p in candidates if p.exists()), None)
+          if gradle is None:
+              raise SystemExit("Android app Gradle file was not generated.")
+          source = gradle.read_text(encoding="utf-8")
+
+          if "signingConfigs" in source and "ANDROID_KEYSTORE" in source:
+              raise SystemExit("A release signing configuration already appears to exist; refusing to duplicate it.")
+
+          if gradle.suffix == ".kts":
+              imports = "import java.io.FileInputStream\nimport java.util.Properties\n\n"
+              source = imports + source
+              marker = "android {"
+              if marker not in source:
+                  raise SystemExit("Could not find android block in Kotlin Gradle file.")
+              props_block = (
+                  'val keystoreProperties = Properties().apply {\n'
+                  '    load(FileInputStream(rootProject.file("key.properties")))\n'
+                  '}\n\n'
+              )
+              source = source.replace(marker, props_block + marker, 1)
+              signing_block = (
+                  '    signingConfigs {\n'
+                  '        create("release") {\n'
+                  '            keyAlias = keystoreProperties["keyAlias"] as String\n'
+                  '            keyPassword = keystoreProperties["keyPassword"] as String\n'
+                  '            storeFile = file(keystoreProperties["storeFile"] as String)\n'
+                  '            storePassword = keystoreProperties["storePassword"] as String\n'
+                  '        }\n'
+                  '    }\n\n'
+              )
+              match = re.search(r"(?m)^\\s*buildTypes\\s*\\{", source)
+              if not match:
+                  raise SystemExit("Could not find buildTypes block in Kotlin Gradle file.")
+              source = source[:match.start()] + signing_block + source[match.start():]
+              source = source.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+              )
+          else:
+              marker = "android {"
+              if marker not in source:
+                  raise SystemExit("Could not find android block in Groovy Gradle file.")
+              props_block = (
+                  "def keystoreProperties = new java.util.Properties()\n"
+                  "keystoreProperties.load(new java.io.FileInputStream(rootProject.file('key.properties')))\n\n"
+              )
+              source = source.replace(marker, props_block + marker, 1)
+              signing_block = (
+                  "    signingConfigs {\n"
+                  "        release {\n"
+                  "            keyAlias keystoreProperties['keyAlias']\n"
+                  "            keyPassword keystoreProperties['keyPassword']\n"
+                  "            storeFile file(keystoreProperties['storeFile'])\n"
+                  "            storePassword keystoreProperties['storePassword']\n"
+                  "        }\n"
+                  "    }\n\n"
+              )
+              match = re.search(r"(?m)^\\s*buildTypes\\s*\\{", source)
+              if not match:
+                  raise SystemExit("Could not find buildTypes block in Groovy Gradle file.")
+              source = source[:match.start()] + signing_block + source[match.start():]
+              source = source.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
+
+          if "signingConfigs.getByName(\"release\")" not in source and "signingConfig signingConfigs.release" not in source:
+              raise SystemExit("Release signing config was added, but release build type was not wired to it.")
+          gradle.write_text(source, encoding="utf-8")
+          print(f"Configured release signing in {gradle}.")
+          PY
+
+      - name: Build APK (debug)
         run: flutter build apk --debug
 
-      - name: Upload APK
+      - name: Build Android App Bundle (release)
+        run: flutter build appbundle --release
+
+      - name: Upload APK and AAB
         uses: actions/upload-artifact@v4
         with:
-          name: acessor-motorista-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: acessor-motorista-builds
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/bundle/release/app-release.aab
