@@ -104,7 +104,7 @@ jobs:
                   '        }\n'
                   '    }\n\n'
               )
-              match = re.search(r"(?m)^\\s*buildTypes\\s*\\{", source)
+              match = re.search(r"(?m)^\s*buildTypes\s*\{", source)
               if not match:
                   raise SystemExit("Could not find buildTypes block in Kotlin Gradle file.")
               source = source[:match.start()] + signing_block + source[match.start():]
@@ -131,7 +131,7 @@ jobs:
                   "        }\n"
                   "    }\n\n"
               )
-              match = re.search(r"(?m)^\\s*buildTypes\\s*\\{", source)
+              match = re.search(r"(?m)^\s*buildTypes\s*\{", source)
               if not match:
                   raise SystemExit("Could not find buildTypes block in Groovy Gradle file.")
               source = source[:match.start()] + signing_block + source[match.start():]
