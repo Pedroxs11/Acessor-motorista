@@ -149,6 +149,16 @@ jobs:
       - name: Build Android App Bundle (release)
         run: flutter build appbundle --release
 
+      - name: Upload AAB to Google Play Internal Testing (draft)
+        if: github.event_name == 'workflow_dispatch'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.acessor.motorista
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: draft
+
       - name: Upload APK and AAB
         uses: actions/upload-artifact@v4
         with:
