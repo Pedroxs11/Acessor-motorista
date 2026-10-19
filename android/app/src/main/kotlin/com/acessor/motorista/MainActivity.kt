@@ -16,11 +16,15 @@ class MainActivity : FlutterActivity() {
             if (intent?.action != OfferAccessibilityService.ACTION_OFFER_TEXT) return
 
             val packageName = intent.getStringExtra(OfferAccessibilityService.EXTRA_PACKAGE) ?: return
-            val text = intent.getStringExtra(OfferAccessibilityService.EXTRA_TEXT) ?: return
+            val text = intent.getStringExtra(OfferAccessibilityService.EXTRA_TEXT).orEmpty()
+            val eventType = intent.getIntExtra(OfferAccessibilityService.EXTRA_EVENT_TYPE, -1)
+            val captureSource = intent.getStringExtra(OfferAccessibilityService.EXTRA_CAPTURE_SOURCE) ?: "unknown"
 
             eventSink?.success(mapOf(
                 "packageName" to packageName,
                 "text" to text,
+                "eventType" to eventType,
+                "captureSource" to captureSource,
             ))
         }
     }
@@ -47,7 +51,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(receiver)
+        runCatching { unregisterReceiver(receiver) }
         eventSink = null
         super.onDestroy()
     }
