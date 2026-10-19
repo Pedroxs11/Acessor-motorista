@@ -1,13 +1,20 @@
 import '../core/ride_offer.dart';
 
-/// Leitor de texto das ofertas exibidas pelos aplicativos de motorista.
-/// O texto pode chegar fragmentado ou sem rótulos explícitos de origem/destino.
+/// Parses offer text exposed by driver apps' Android accessibility trees.
 class TextOfferReader {
   const TextOfferReader();
 
   RideOffer? read(String text) {
     final normalized = _normalize(text);
     if (normalized.isEmpty) return null;
+
+    final value = _money(normalized);
+    final distances = _distances(normalized);
+    final durations = _durations(normalized);
+
+    // Do not classify unrelated screen changes as offers. A fare and at least
+    // one trip/pickup distance must be present in the captured accessibility text.
+    if (value == null || distances.isEmpty) return null;
 
     final platform = _platform(normalized);
     final category = _category(normalized);
@@ -20,25 +27,13 @@ class TextOfferReader {
             ? PaymentType.pix
             : PaymentType.app;
 
-    final value = _money(normalized);
-    final distances = RegExp(r'(\d+(?:[\.,]\d+)?)\s*km')
-        .allMatches(normalized)
-        .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
-        .whereType<double>()
-        .toList();
-
-    final durations = _durations(normalized);
-    if (value == null || distances.isEmpty) return null;
-
-    // Uber normalmente apresenta primeiro a distância/tempo até o embarque
-    // e depois a distância/tempo da viagem.
+    // Uber offer cards list pickup distance first and trip distance second.
     final pickupKm = distances.length > 1 ? distances[0] : 0.0;
     final tripKm = distances.length > 1 ? distances[1] : distances[0];
     final pickupMin = durations.length > 1 ? durations[0] : 0;
     final tripMin = durations.length > 1
         ? durations[1]
         : (durations.isNotEmpty ? durations[0] : 0);
-
     final addresses = _extractAddresses(normalized);
 
     return RideOffer(
@@ -93,8 +88,18 @@ class TextOfferReader {
     return double.tryParse(raw);
   }
 
+  List<double> _distances(String text) {
+    // Avoid matching "1,72/km aprox." as a distance; only actual "km" values
+    // followed by whitespace, punctuation, a parenthesis, or end-of-string count.
+    final matches = RegExp(r'(\d+(?:[\.,]\d+)?)\s*km(?=\s|\)|,|\.|$)')
+        .allMatches(text);
+    return matches
+        .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
+        .whereType<double>()
+        .toList();
+  }
+
   List<int> _durations(String text) {
-    // Captura "1 h e 5 min", "1h 5min", "4 min" e "1 hora e 5 minutos".
     final expression = RegExp(
       r'(?:(\d+)\s*h(?:ora)?s?\s*(?:e\s*)?)?(\d+)\s*min(?:uto)?s?',
     );
@@ -106,12 +111,9 @@ class TextOfferReader {
   }
 
   (String, String) _extractAddresses(String text) {
-    // Nos cartões do Uber os endereços aparecem depois dos tempos/distâncias,
-    // sem as palavras "origem" e "destino". Remove metadados conhecidos e
-    // conserva os segmentos de endereço restantes quando disponíveis.
     final cleaned = text
         .replaceAll(RegExp(r'r\$\s*\d+(?:\.\d{3})*(?:[\.,]\d{1,2})?'), ' ')
-        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*km'), ' ')
+        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*km(?=\s|\)|,|\.|$)'), ' ')
         .replaceAll(RegExp(r'(?:(\d+)\s*h(?:ora)?s?\s*(?:e\s*)?)?\d+\s*min(?:uto)?s?'), ' ')
         .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*/\s*km\s*aprox\.?'), ' ')
         .replaceAll(RegExp(r'uber\s*x|uberx|exclusivo|viagem longa|mais de 45 min'), ' ')
@@ -119,12 +121,9 @@ class TextOfferReader {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    final labeledOrigin = _extractAfter(cleaned, 'origem');
-    final labeledDestination = _extractAfter(cleaned, 'destino');
-    if (labeledOrigin.isNotEmpty || labeledDestination.isNotEmpty) {
-      return (labeledOrigin, labeledDestination);
-    }
-    return ('', '');
+    final origin = _extractAfter(cleaned, 'origem');
+    final destination = _extractAfter(cleaned, 'destino');
+    return (origin, destination);
   }
 
   String _extractAfter(String text, String label) {
