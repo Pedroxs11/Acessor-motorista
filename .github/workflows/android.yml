@@ -39,11 +39,11 @@ jobs:
               raise SystemExit("Android app Gradle file not found.")
           source = gradle.read_text(encoding="utf-8")
           if gradle.suffix == ".kts":
-              source, min_count = re.subn(r"(?m)^(\\s*minSdk\\s*=\\s*)(?:flutter\\.minSdkVersion|\\d+)", r"\\g<1>24", source)
-              source, target_count = re.subn(r"(?m)^(\\s*targetSdk\\s*=\\s*)(?:flutter\\.targetSdkVersion|\\d+)", r"\\g<1>36", source)
+              source, min_count = re.subn(r"(?m)^(\s*minSdk\s*=\s*)(?:flutter\.minSdkVersion|\d+)", r"\g<1>24", source)
+              source, target_count = re.subn(r"(?m)^(\s*targetSdk\s*=\s*)(?:flutter\.targetSdkVersion|\d+)", r"\g<1>36", source)
           else:
-              source, min_count = re.subn(r"(?m)^(\\s*minSdkVersion\\s+)(?:flutter\\.minSdkVersion|\\d+)", r"\\g<1>24", source)
-              source, target_count = re.subn(r"(?m)^(\\s*targetSdkVersion\\s+)(?:flutter\\.targetSdkVersion|\\d+)", r"\\g<1>36", source)
+              source, min_count = re.subn(r"(?m)^(\s*minSdkVersion\s+)(?:flutter\.minSdkVersion|\d+)", r"\g<1>24", source)
+              source, target_count = re.subn(r"(?m)^(\s*targetSdkVersion\s+)(?:flutter\.targetSdkVersion|\d+)", r"\g<1>36", source)
           if min_count == 0:
               raise SystemExit("Could not locate minSdk setting; refusing to build with an unverified SDK.")
           if target_count == 0:
