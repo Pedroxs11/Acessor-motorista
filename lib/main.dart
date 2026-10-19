@@ -46,6 +46,8 @@ class _HomePageState extends State<HomePage> {
   String _status = 'Aguardando evento de acessibilidade...';
   String _lastPackage = '';
   String _lastCapturedText = '';
+  String _lastCaptureSource = '';
+  int _lastEventType = -1;
   String _diagnosis = 'Abra o Uber ou 99 e aguarde uma oferta aparecer.';
 
   @override
@@ -67,6 +69,8 @@ class _HomePageState extends State<HomePage> {
     if (event is! Map) return;
     final packageName = event['packageName']?.toString() ?? '';
     final text = event['text']?.toString() ?? '';
+    final captureSource = event['captureSource']?.toString() ?? 'unknown';
+    final eventType = int.tryParse(event['eventType']?.toString() ?? '') ?? -1;
     if (packageName.isEmpty) return;
 
     final decision = _pipeline.process(
@@ -78,6 +82,8 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _lastPackage = packageName;
       _lastCapturedText = text;
+      _lastCaptureSource = captureSource;
+      _lastEventType = eventType;
       _decision = decision;
       _status = decision != null
           ? 'Oferta analisada automaticamente.'
@@ -139,6 +145,10 @@ class _HomePageState extends State<HomePage> {
                 SelectableText(
                   'Pacote recebido: ${_lastPackage.isEmpty ? 'nenhum' : _lastPackage}',
                 ),
+                const SizedBox(height: 8),
+                SelectableText('Tipo de evento Android: ${_lastEventType < 0 ? 'desconhecido' : _lastEventType}'),
+                const SizedBox(height: 8),
+                SelectableText('Fonte do texto: ${_lastCaptureSource.isEmpty ? 'nenhuma' : _lastCaptureSource}'),
                 const SizedBox(height: 8),
                 SelectableText(
                   'Caracteres capturados: ${_lastCapturedText.length}',
