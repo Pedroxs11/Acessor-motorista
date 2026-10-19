@@ -175,7 +175,6 @@ jobs:
         run: flutter build appbundle --release
 
       - name: Upload AAB to Google Play Internal Testing (draft)
-        if: github.event_name == 'workflow_dispatch'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
