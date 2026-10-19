@@ -27,6 +27,27 @@ jobs:
             find android/app -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -exec sed -i 's/com\.example\.flutter_android_scaffold/com\.acessor\.motorista/g' {} +
           fi
 
+      - name: Set minimum Android SDK for Google Play protection
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          candidates = [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]
+          gradle = next((p for p in candidates if p.exists()), None)
+          if gradle is None:
+              raise SystemExit("Android app Gradle file not found.")
+          source = gradle.read_text(encoding="utf-8")
+          if gradle.suffix == ".kts":
+              updated, count = re.subn(r"(?m)^(\\s*minSdk\\s*=\\s*)(?:flutter\\.minSdkVersion|\\d+)", r"\\g<1>24", source)
+          else:
+              updated, count = re.subn(r"(?m)^(\\s*minSdkVersion\\s+)(?:flutter\\.minSdkVersion|\\d+)", r"\\g<1>24", source)
+          if count == 0:
+              raise SystemExit("Could not locate minSdk setting; refusing to build with an unverified SDK.")
+          gradle.write_text(updated, encoding="utf-8")
+          print(f"Set minSdk to 24 in {gradle}.")
+          PY
+
       - name: Flutter pub get
         run: flutter pub get
 
