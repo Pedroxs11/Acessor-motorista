@@ -1,12 +1,13 @@
 import '../core/ride_offer.dart';
 
-/// Leitor inicial baseado em texto extraido de uma oferta.
-/// A captura/OCR de cada plataforma sera conectada a esta camada depois.
+/// Leitor de texto das ofertas exibidas pelos aplicativos de motorista.
+/// O texto pode chegar fragmentado ou sem rótulos explícitos de origem/destino.
 class TextOfferReader {
   const TextOfferReader();
 
   RideOffer? read(String text) {
-    final normalized = text.toLowerCase();
+    final normalized = _normalize(text);
+    if (normalized.isEmpty) return null;
 
     final platform = _platform(normalized);
     final category = _category(normalized);
@@ -20,22 +21,25 @@ class TextOfferReader {
             : PaymentType.app;
 
     final value = _money(normalized);
-    final numbers = RegExp(r'(\d+(?:[\.,]\d+)?)\s*km').allMatches(normalized)
+    final distances = RegExp(r'(\d+(?:[\.,]\d+)?)\s*km')
+        .allMatches(normalized)
         .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
         .whereType<double>()
         .toList();
 
-    final times = RegExp(r'(\d+)\s*min').allMatches(normalized)
-        .map((m) => int.tryParse(m.group(1)!))
-        .whereType<int>()
-        .toList();
+    final durations = _durations(normalized);
+    if (value == null || distances.isEmpty) return null;
 
-    if (value == null || numbers.isEmpty) return null;
+    // Uber normalmente apresenta primeiro a distância/tempo até o embarque
+    // e depois a distância/tempo da viagem.
+    final pickupKm = distances.length > 1 ? distances[0] : 0.0;
+    final tripKm = distances.length > 1 ? distances[1] : distances[0];
+    final pickupMin = durations.length > 1 ? durations[0] : 0;
+    final tripMin = durations.length > 1
+        ? durations[1]
+        : (durations.isNotEmpty ? durations[0] : 0);
 
-    final pickupKm = numbers.length > 1 ? numbers.first : 0.0;
-    final tripKm = numbers.length > 1 ? numbers[1] : numbers.first;
-    final pickupMin = times.length > 1 ? times.first : 0;
-    final tripMin = times.length > 1 ? times[1] : (times.isNotEmpty ? times.first : 0);
+    final addresses = _extractAddresses(normalized);
 
     return RideOffer(
       platform: platform,
@@ -43,8 +47,8 @@ class TextOfferReader {
       offerType: offerType,
       paymentType: paymentType,
       value: value,
-      origin: _extractAfter(normalized, 'origem'),
-      destination: _extractAfter(normalized, 'destino'),
+      origin: addresses.$1,
+      destination: addresses.$2,
       pickupDistanceKm: pickupKm,
       tripDistanceKm: tripKm,
       pickupTimeMin: pickupMin,
@@ -52,10 +56,18 @@ class TextOfferReader {
     );
   }
 
+  String _normalize(String text) => text
+      .toLowerCase()
+      .replaceAll('\u00a0', ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
   PlatformType _platform(String text) {
     if (text.contains('uber')) return PlatformType.uber;
-    if (text.contains('99')) return PlatformType.nineNine;
+    if (RegExp(r'\b99\b').hasMatch(text)) return PlatformType.nineNine;
     if (text.contains('ifood')) return PlatformType.ifood;
+    if (text.contains('rappi')) return PlatformType.rappi;
+    if (text.contains('lalamove')) return PlatformType.lalamove;
     return PlatformType.unknown;
   }
 
@@ -66,15 +78,53 @@ class TextOfferReader {
     if (text.contains('99plus') || text.contains('99 plus')) return RideCategory.plus;
     if (text.contains('99pop') || text.contains('pop')) return RideCategory.pop;
     if (text.contains('moto')) return RideCategory.moto;
-    if (text.contains('uberx') || text.contains('uber x')) return RideCategory.uberX;
+    if (RegExp(r'uber\s*x').hasMatch(text) || text.contains('uberx')) {
+      return RideCategory.uberX;
+    }
     if (text.contains('ifood')) return RideCategory.delivery;
     return RideCategory.unknown;
   }
 
   double? _money(String text) {
-    final match = RegExp(r'r\$\s*(\d+(?:[\.,]\d+)?)').firstMatch(text);
+    final match = RegExp(r'r\$\s*(\d+(?:\.\d{3})*(?:[\.,]\d{1,2})?)')
+        .firstMatch(text);
     if (match == null) return null;
-    return double.tryParse(match.group(1)!.replaceAll(',', '.'));
+    final raw = match.group(1)!.replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(raw);
+  }
+
+  List<int> _durations(String text) {
+    // Captura "1 h e 5 min", "1h 5min", "4 min" e "1 hora e 5 minutos".
+    final expression = RegExp(
+      r'(?:(\d+)\s*h(?:ora)?s?\s*(?:e\s*)?)?(\d+)\s*min(?:uto)?s?',
+    );
+    return expression.allMatches(text).map((match) {
+      final hours = int.tryParse(match.group(1) ?? '') ?? 0;
+      final minutes = int.tryParse(match.group(2) ?? '') ?? 0;
+      return hours * 60 + minutes;
+    }).toList();
+  }
+
+  (String, String) _extractAddresses(String text) {
+    // Nos cartões do Uber os endereços aparecem depois dos tempos/distâncias,
+    // sem as palavras "origem" e "destino". Remove metadados conhecidos e
+    // conserva os segmentos de endereço restantes quando disponíveis.
+    final cleaned = text
+        .replaceAll(RegExp(r'r\$\s*\d+(?:\.\d{3})*(?:[\.,]\d{1,2})?'), ' ')
+        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*km'), ' ')
+        .replaceAll(RegExp(r'(?:(\d+)\s*h(?:ora)?s?\s*(?:e\s*)?)?\d+\s*min(?:uto)?s?'), ' ')
+        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*/\s*km\s*aprox\.?'), ' ')
+        .replaceAll(RegExp(r'uber\s*x|uberx|exclusivo|viagem longa|mais de 45 min'), ' ')
+        .replaceAll(RegExp(r'\d{1,2}[\.,]\d{2}\s*\(\d+\)'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final labeledOrigin = _extractAfter(cleaned, 'origem');
+    final labeledDestination = _extractAfter(cleaned, 'destino');
+    if (labeledOrigin.isNotEmpty || labeledDestination.isNotEmpty) {
+      return (labeledOrigin, labeledDestination);
+    }
+    return ('', '');
   }
 
   String _extractAfter(String text, String label) {
