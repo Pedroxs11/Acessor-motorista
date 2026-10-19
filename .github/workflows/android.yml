@@ -39,9 +39,9 @@ jobs:
               raise SystemExit("Android app Gradle file not found.")
           source = gradle.read_text(encoding="utf-8")
           if gradle.suffix == ".kts":
-              updated, count = re.subn(r"(?m)^(\s*minSdk\s*=\s*)(?:flutter\.minSdkVersion|\\d+)", r"\g<1>24", source)
+              updated, count = re.subn(r"(?m)^(\s*minSdk\s*=\s*)(?:flutter\.minSdkVersion|\d+)", r"\g<1>24", source)
           else:
-              updated, count = re.subn(r"(?m)^(\s*minSdkVersion\s+)(?:flutter\.minSdkVersion|\\d+)", r"\g<1>24", source)
+              updated, count = re.subn(r"(?m)^(\s*minSdkVersion\s+)(?:flutter\.minSdkVersion|\d+)", r"\g<1>24", source)
           if count == 0:
               raise SystemExit("Could not locate minSdk setting; refusing to build with an unverified SDK.")
           gradle.write_text(updated, encoding="utf-8")
