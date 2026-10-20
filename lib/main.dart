@@ -394,7 +394,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final normalized = text.toLowerCase().replaceAll('\u00a0', ' ');
     final hasMoney = RegExp(r'r\$\s*\d').hasMatch(normalized);
     final hasDistance = RegExp(
-      r'\d+(?:[\.,]\d+)?\s*km(?=\s|\)|,|\.|$)',
+      r'\d+(?:[\.,]\d+)?\s*(?:km|m)\b(?=\s|\)|,|\.|$)',
     ).hasMatch(normalized);
 
     if (!hasMoney && !hasDistance) {
