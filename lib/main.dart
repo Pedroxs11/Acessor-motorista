@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -60,6 +62,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _lastCaptureSource = '';
   int _lastEventType = -1;
   String _diagnosis = 'Abra o Uber ou 99 e aguarde uma oferta aparecer.';
+  Timer? _overlayHideTimer;
+  String _lastOfferFingerprint = '';
 
   @override
   void initState() {
@@ -93,6 +97,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       criteria: _criteria,
     );
 
+    // Automatically keep the floating card synchronized with each valid offer.
+    // Debounce blank/unparsed accessibility events so transient events don't hide it.
+    if (decision != null) {
+      _overlayHideTimer?.cancel();
+      final offer = decision.offer;
+      final fingerprint = [
+        packageName,
+        offer.value.toStringAsFixed(2),
+        offer.totalDistanceKm.toStringAsFixed(2),
+        offer.totalTimeMin.toString(),
+        offer.category.name,
+        offer.origin,
+        offer.destination,
+      ].join('|');
+      if (_overlayEnabled && fingerprint != _lastOfferFingerprint) {
+        _lastOfferFingerprint = fingerprint;
+        _showFloatingDecision(decision);
+      }
+    } else if (_overlayEnabled && _decision != null) {
+      _overlayHideTimer?.cancel();
+      _overlayHideTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (mounted) _hideFloatingDecision();
+      });
+    }
+
     if (!mounted) return;
     setState(() {
       _lastPackage = packageName;
@@ -122,6 +151,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _overlayHideTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _minValueController.dispose();
     _minPerKmController.dispose();
@@ -271,6 +301,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _hideFloatingDecision() async {
+    _lastOfferFingerprint = '';
     try { await _overlayChannel.invokeMethod('hide'); } catch (_) {}
   }
 
