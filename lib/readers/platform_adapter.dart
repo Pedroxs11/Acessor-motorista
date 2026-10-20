@@ -20,5 +20,6 @@ class GenericPlatformAdapter implements PlatformAdapter {
   });
 
   @override
-  RideOffer? parse(String capturedText) => reader.read(capturedText);
+  RideOffer? parse(String capturedText) =>
+      reader.read(capturedText, platformFallback: platform);
 }
