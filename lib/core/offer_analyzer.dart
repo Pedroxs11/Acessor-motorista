@@ -6,6 +6,8 @@ class CategoryRule {
   final int? maxTimeMin;
   final double? minReaisPerKm;
   final double? minReaisPerHour;
+  final double? maxPickupDistanceKm;
+  final int? maxPickupTimeMin;
 
   const CategoryRule({
     this.minValue,
@@ -13,6 +15,8 @@ class CategoryRule {
     this.maxTimeMin,
     this.minReaisPerKm,
     this.minReaisPerHour,
+    this.maxPickupDistanceKm,
+    this.maxPickupTimeMin,
   });
 }
 
@@ -41,12 +45,22 @@ class OfferAnalyzer {
 
     if (rule.maxDistanceKm != null &&
         offer.totalDistanceKm > rule.maxDistanceKm!) {
-      reasons.add('Distancia acima do maximo');
+      reasons.add('Distancia total acima do maximo');
     }
 
     if (rule.maxTimeMin != null &&
         offer.totalTimeMin > rule.maxTimeMin!) {
-      reasons.add('Tempo acima do maximo');
+      reasons.add('Tempo total acima do maximo');
+    }
+
+    if (rule.maxPickupDistanceKm != null &&
+        offer.pickupDistanceKm > rule.maxPickupDistanceKm!) {
+      reasons.add('Distancia ate o embarque acima do maximo');
+    }
+
+    if (rule.maxPickupTimeMin != null &&
+        offer.pickupTimeMin > rule.maxPickupTimeMin!) {
+      reasons.add('Tempo ate o embarque acima do maximo');
     }
 
     if (rule.minReaisPerKm != null &&
