@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/driver_criteria.dart';
 import 'core/offer_decision.dart';
+import 'core/overlay_fields.dart';
 import 'readers/offer_pipeline.dart';
 
 void main() => runApp(const AcessorApp());
@@ -55,6 +57,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final _maxPickupTimeController = TextEditingController(text: '0');
   DriverCriteria? _criteria;
   bool _savingCriteria = false;
+  OverlayFields _overlayFields = const OverlayFields();
+  bool _savingOverlayFields = false;
   OfferDecision? _decision;
   String _status = 'Aguardando evento de acessibilidade...';
   String _lastPackage = '';
@@ -71,6 +75,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _refreshPermissions();
     _loadCriteria();
+    _loadOverlayFields();
     _captureChannel.receiveBroadcastStream().listen(
       _onCapture,
       onError: (Object error) {
@@ -198,6 +203,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadOverlayFields() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      final data = <String, dynamic>{
+        for (final key in const [
+          'value', 'perKm', 'perHour', 'perMinute', 'distance',
+          'time', 'category', 'origin', 'destination',
+        ])
+          key: prefs.getBool('overlay_$key'),
+      };
+      setState(() => _overlayFields = OverlayFields.fromMap(data));
+    } catch (_) {
+      // Keep all fields visible if local preferences cannot be read.
+    }
+  }
+
+  Future<void> _saveOverlayFields() async {
+    setState(() => _savingOverlayFields = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final entry in _overlayFields.toMap().entries) {
+        final saved = await prefs.setBool('overlay_${entry.key}', entry.value);
+        if (!saved) throw PlatformException(code: 'SAVE_FAILED');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Preferências do cartão salvas neste aparelho.')),
+      );
+      if (_overlayEnabled && _decision != null) {
+        await _showFloatingDecision(_decision!);
+      }
+    } on PlatformException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível salvar as preferências do cartão.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível acessar as preferências locais.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingOverlayFields = false);
+    }
+  }
+
   double _readNumber(TextEditingController controller) {
     return double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? 0;
   }
@@ -259,6 +313,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  Widget _overlayFieldSwitch(
+    String title,
+    bool visible,
+    OverlayFields Function(bool enabled) update,
+  ) => SwitchListTile(
+        title: Text(title),
+        value: visible,
+        dense: true,
+        onChanged: (enabled) => setState(() => _overlayFields = update(enabled)),
+      );
+
   Widget _criteriaField(String label, TextEditingController controller) {
     return Expanded(
       child: TextField(
@@ -295,15 +360,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'perHourGood': !decision.analysis.reasons.contains('R\$/hora abaixo do minimo'),
         'distanceGood': !decision.analysis.reasons.contains('Distancia total acima do maximo'),
         'timeGood': !decision.analysis.reasons.contains('Tempo total acima do maximo'),
-        'value': 'R\$ ${offer.value.toStringAsFixed(2)}',
-        'perKm': 'R\$ ${offer.reaisPerKm.toStringAsFixed(2)}',
-        'perHour': 'R\$ ${offer.reaisPerHour.toStringAsFixed(0)}',
-        'perMinute': offer.totalTimeMin > 0 ? 'R\$ ${(offer.value / offer.totalTimeMin).toStringAsFixed(2)}' : '',
-        'distance': '${offer.totalDistanceKm.toStringAsFixed(1)} km',
-        'time': '${offer.totalTimeMin} min',
-        'category': offer.category.name,
-        'origin': offer.origin,
-        'destination': offer.destination,
+        'value': _overlayFields.value ? 'R\$ ${offer.value.toStringAsFixed(2)}' : '',
+        'perKm': _overlayFields.perKm ? 'R\$ ${offer.reaisPerKm.toStringAsFixed(2)}' : '',
+        'perHour': _overlayFields.perHour ? 'R\$ ${offer.reaisPerHour.toStringAsFixed(0)}' : '',
+        'perMinute': _overlayFields.perMinute && offer.totalTimeMin > 0 ? 'R\$ ${(offer.value / offer.totalTimeMin).toStringAsFixed(2)}' : '',
+        'distance': _overlayFields.distance ? '${offer.totalDistanceKm.toStringAsFixed(1)} km' : '',
+        'time': _overlayFields.time ? '${offer.totalTimeMin} min' : '',
+        'category': _overlayFields.category ? offer.category.name : '',
+        'origin': _overlayFields.origin ? offer.origin : '',
+        'destination': _overlayFields.destination ? offer.destination : '',
       });
       return true;
     } catch (_) {
@@ -470,6 +535,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: ExpansionTile(
+                title: const Text(
+                  'Personalizar cartão flutuante',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text(
+                  'Escolha quais informações aparecem. A preferência fica salva neste aparelho.',
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                children: [
+                  _overlayFieldSwitch('Valor da oferta', _overlayFields.value,
+                      (enabled) => _overlayFields.copyWith(value: enabled)),
+                  _overlayFieldSwitch('R$/km', _overlayFields.perKm,
+                      (enabled) => _overlayFields.copyWith(perKm: enabled)),
+                  _overlayFieldSwitch('R$/hora', _overlayFields.perHour,
+                      (enabled) => _overlayFields.copyWith(perHour: enabled)),
+                  _overlayFieldSwitch('R$/minuto', _overlayFields.perMinute,
+                      (enabled) => _overlayFields.copyWith(perMinute: enabled)),
+                  _overlayFieldSwitch('Distância total', _overlayFields.distance,
+                      (enabled) => _overlayFields.copyWith(distance: enabled)),
+                  _overlayFieldSwitch('Tempo total', _overlayFields.time,
+                      (enabled) => _overlayFields.copyWith(time: enabled)),
+                  _overlayFieldSwitch('Categoria', _overlayFields.category,
+                      (enabled) => _overlayFields.copyWith(category: enabled)),
+                  _overlayFieldSwitch('Origem', _overlayFields.origin,
+                      (enabled) => _overlayFields.copyWith(origin: enabled)),
+                  _overlayFieldSwitch('Destino', _overlayFields.destination,
+                      (enabled) => _overlayFields.copyWith(destination: enabled)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _savingOverlayFields ? null : _saveOverlayFields,
+                      icon: _savingOverlayFields
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_outlined),
+                      label: Text(_savingOverlayFields
+                          ? 'Salvando...'
+                          : 'Salvar preferências do cartão'),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
