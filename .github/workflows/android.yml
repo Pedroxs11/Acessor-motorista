@@ -8,7 +8,7 @@ on:
 # Mantém somente a compilação mais recente; evita que uma execução travada
 # publique uma versão antiga ou bloqueie a versão que contém as correções atuais.
 concurrency:
-  group: acessor-motorista-android-build
+  group: acessor-motorista-google-play-internal
   cancel-in-progress: true
 
 jobs:
@@ -207,7 +207,14 @@ jobs:
       - name: Build Android App Bundle (release)
         run: flutter build appbundle --release
 
-      # O AAB é disponibilizado como artefato para revisão e envio manual autorizado.
+      - name: Upload AAB to Google Play Internal Testing
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.acessor.motorista
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
 
       - name: Upload APK and AAB
         if: always()
