@@ -5,14 +5,16 @@ on:
   push:
     branches: [main]
 
-# Evita duas publicações concorrentes usando a mesma edição da Google Play.
+# Mantém somente a compilação mais recente; evita que uma execução travada
+# publique uma versão antiga ou bloqueie a versão que contém as correções atuais.
 concurrency:
   group: acessor-motorista-google-play-internal
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
