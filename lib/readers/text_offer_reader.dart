@@ -4,7 +4,7 @@ import '../core/ride_offer.dart';
 class TextOfferReader {
   const TextOfferReader();
 
-  RideOffer? read(String text) {
+  RideOffer? read(String text, {PlatformType platformFallback = PlatformType.unknown}) {
     final normalized = _normalize(text);
     if (normalized.isEmpty) return null;
 
@@ -16,7 +16,10 @@ class TextOfferReader {
     // one trip/pickup distance must be present in the captured accessibility text.
     if (value == null || distances.isEmpty) return null;
 
-    final platform = _platform(normalized);
+    final detectedPlatform = _platform(normalized);
+    final platform = detectedPlatform == PlatformType.unknown
+        ? platformFallback
+        : detectedPlatform;
     final category = _category(normalized);
     final offerType = normalized.contains('negocia')
         ? OfferType.negotiates
@@ -69,7 +72,7 @@ class TextOfferReader {
   RideCategory _category(String text) {
     if (text.contains('comfort')) return RideCategory.comfort;
     if (text.contains('black')) return RideCategory.black;
-    if (text.contains('prioridade')) return RideCategory.priority;
+    if (text.contains('prioridade') || text.contains('priority')) return RideCategory.priority;
     if (text.contains('99plus') || text.contains('99 plus')) return RideCategory.plus;
     if (text.contains('99pop') || text.contains('pop')) return RideCategory.pop;
     if (text.contains('moto')) return RideCategory.moto;
