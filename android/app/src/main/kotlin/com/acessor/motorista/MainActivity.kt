@@ -25,11 +25,13 @@ class MainActivity : FlutterActivity() {
             val text = intent.getStringExtra(OfferAccessibilityService.EXTRA_TEXT).orEmpty()
             val eventType = intent.getIntExtra(OfferAccessibilityService.EXTRA_EVENT_TYPE, -1)
             val captureSource = intent.getStringExtra(OfferAccessibilityService.EXTRA_CAPTURE_SOURCE) ?: "unknown"
+            val debugDetails = intent.getStringExtra(OfferAccessibilityService.EXTRA_DEBUG_DETAILS).orEmpty()
             eventSink?.success(mapOf(
                 "packageName" to packageName,
                 "text" to text,
                 "eventType" to eventType,
                 "captureSource" to captureSource,
+                "debugDetails" to debugDetails,
             ))
         }
     }
