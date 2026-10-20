@@ -92,14 +92,17 @@ class TextOfferReader {
   }
 
   List<double> _distances(String text) {
-    // Avoid matching "1,72/km aprox." as a distance; only actual "km" values
-    // followed by whitespace, punctuation, a parenthesis, or end-of-string count.
-    final matches = RegExp(r'(\d+(?:[\.,]\d+)?)\s*km(?=\s|\)|,|\.|$)')
-        .allMatches(text);
-    return matches
-        .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
-        .whereType<double>()
-        .toList();
+    // Accept both kilometers and meters, as 99 cards may show pickup distance
+    // in meters (for example, "773 m") and the trip distance in kilometers.
+    // The unit boundary prevents matching "min" or the "/km" price metric.
+    final matches = RegExp(
+      r'(\d+(?:[\.,]\d+)?)\s*(km|m)\b(?=\s|\)|,|\.|$)',
+    ).allMatches(text);
+    return matches.map((match) {
+      final value = double.tryParse(match.group(1)!.replaceAll(',', '.'));
+      if (value == null) return null;
+      return match.group(2) == 'm' ? value / 1000 : value;
+    }).whereType<double>().toList();
   }
 
   List<int> _durations(String text) {
@@ -116,7 +119,7 @@ class TextOfferReader {
   (String, String) _extractAddresses(String text) {
     final cleaned = text
         .replaceAll(RegExp(r'r\$\s*\d+(?:\.\d{3})*(?:[\.,]\d{1,2})?'), ' ')
-        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*km(?=\s|\)|,|\.|$)'), ' ')
+        .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*(?:km|m)\b(?=\s|\)|,|\.|$)'), ' ')
         .replaceAll(RegExp(r'(?:(\d+)\s*h(?:ora)?s?\s*(?:e\s*)?)?\d+\s*min(?:uto)?s?'), ' ')
         .replaceAll(RegExp(r'\d+(?:[\.,]\d+)?\s*/\s*km\s*aprox\.?'), ' ')
         .replaceAll(RegExp(r'uber\s*x|uberx|exclusivo|viagem longa|mais de 45 min'), ' ')
