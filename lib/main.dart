@@ -100,7 +100,44 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _refreshOverlayPermission() async {\n    try {\n      final allowed = await _overlayChannel.invokeMethod<bool>('hasPermission') ?? false;\n      if (mounted) setState(() => _overlayEnabled = allowed);\n    } catch (_) {}\n  }\n\n  Future<void> _requestOverlayPermission() async {\n    await _overlayChannel.invokeMethod('requestPermission');\n    await Future<void>.delayed(const Duration(milliseconds: 500));\n    await _refreshOverlayPermission();\n    if (_overlayEnabled && _decision != null) await _showFloatingDecision(_decision!);\n  }\n\n  Future<void> _showFloatingDecision(OfferDecision decision) async {\n    final offer = decision.offer;\n    try {\n      await _overlayChannel.invokeMethod('show', {\n        'label': decision.analysis.accepted ? 'BOA • ACEITAR' : 'RUIM • NÃO ACEITAR',\n        'accepted': decision.analysis.accepted,\n        'value': 'R\\$ ${offer.value.toStringAsFixed(2)}',\n        'perKm': 'R\\$ ${offer.reaisPerKm.toStringAsFixed(2)}',\n        'perHour': 'R\\$ ${offer.reaisPerHour.toStringAsFixed(0)}',\n        'perMinute': offer.totalTimeMin > 0 ? 'R\\$ ${(offer.value / offer.totalTimeMin).toStringAsFixed(2)}' : '',\n        'distance': '${offer.totalDistanceKm.toStringAsFixed(1)} km',\n        'time': '${offer.totalTimeMin} min',\n        'category': offer.category.name,\n        'origin': offer.origin,\n        'destination': offer.destination,\n      });\n    } catch (_) {}\n  }\n\n  Future<void> _hideFloatingDecision() async {\n    try { await _overlayChannel.invokeMethod('hide'); } catch (_) {}\n  }\n\n  String _diagnose(String packageName, String text, OfferDecision? decision) {
+  Future<void> _refreshOverlayPermission() async {
+    try {
+      final allowed = await _overlayChannel.invokeMethod<bool>('hasPermission') ?? false;
+      if (mounted) setState(() => _overlayEnabled = allowed);
+    } catch (_) {}
+  }
+
+  Future<void> _requestOverlayPermission() async {
+    await _overlayChannel.invokeMethod('requestPermission');
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await _refreshOverlayPermission();
+    if (_overlayEnabled && _decision != null) await _showFloatingDecision(_decision!);
+  }
+
+  Future<void> _showFloatingDecision(OfferDecision decision) async {
+    final offer = decision.offer;
+    try {
+      await _overlayChannel.invokeMethod('show', {
+        'label': decision.analysis.accepted ? 'BOA • ACEITAR' : 'RUIM • NÃO ACEITAR',
+        'accepted': decision.analysis.accepted,
+        'value': 'R\\$ ${offer.value.toStringAsFixed(2)}',
+        'perKm': 'R\\$ ${offer.reaisPerKm.toStringAsFixed(2)}',
+        'perHour': 'R\\$ ${offer.reaisPerHour.toStringAsFixed(0)}',
+        'perMinute': offer.totalTimeMin > 0 ? 'R\\$ ${(offer.value / offer.totalTimeMin).toStringAsFixed(2)}' : '',
+        'distance': '${offer.totalDistanceKm.toStringAsFixed(1)} km',
+        'time': '${offer.totalTimeMin} min',
+        'category': offer.category.name,
+        'origin': offer.origin,
+        'destination': offer.destination,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _hideFloatingDecision() async {
+    try { await _overlayChannel.invokeMethod('hide'); } catch (_) {}
+  }
+
+  String _diagnose(String packageName, String text, OfferDecision? decision) {
     if (!_supportedPackages.contains(packageName)) {
       return 'O pacote recebido não está cadastrado nos leitores.';
     }
@@ -139,7 +176,17 @@ class _HomePageState extends State<HomePage> {
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text(_status),\n            const SizedBox(height: 12),\n            Wrap(spacing: 8, runSpacing: 8, children: [\n              FilledButton.icon(\n                onPressed: _overlayEnabled ? (_decision == null ? null : () => _showFloatingDecision(_decision!)) : _requestOverlayPermission,\n                icon: Icon(_overlayEnabled ? Icons.layers : Icons.layers_outlined),\n                label: Text(_overlayEnabled ? 'Mostrar cartão flutuante' : 'Ativar cartão flutuante'),\n              ),\n              if (_overlayEnabled) OutlinedButton(onPressed: _hideFloatingDecision, child: const Text('Ocultar cartão')),\n            ]),\n            Text(_overlayEnabled ? 'Sobreposição autorizada' : 'É necessária permissão para exibir sobre outros apps.'),
+            Text(_status),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed: _overlayEnabled ? (_decision == null ? null : () => _showFloatingDecision(_decision!)) : _requestOverlayPermission,
+                icon: Icon(_overlayEnabled ? Icons.layers : Icons.layers_outlined),
+                label: Text(_overlayEnabled ? 'Mostrar cartão flutuante' : 'Ativar cartão flutuante'),
+              ),
+              if (_overlayEnabled) OutlinedButton(onPressed: _hideFloatingDecision, child: const Text('Ocultar cartão')),
+            ]),
+            Text(_overlayEnabled ? 'Sobreposição autorizada' : 'É necessária permissão para exibir sobre outros apps.'),
             const SizedBox(height: 8),
             Text('Diagnóstico: $_diagnosis'),
             const SizedBox(height: 20),
