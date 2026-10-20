@@ -34,6 +34,30 @@ void main() {
     expect(offer.reaisPerHour, closeTo(37.39, 0.1));
   });
 
+
+  test('recognizes a 99 offer with pickup distance in meters', () {
+    const text = '''
+      99Pop
+      R\$ 7,50
+      R\$ 3,93/km
+      7 min (773 m)
+      3 min (1,1 km)
+      Aceitar
+    ''';
+
+    final offer = reader.read(text, platformFallback: PlatformType.nineNine);
+
+    expect(offer, isNotNull);
+    expect(offer!.platform, PlatformType.nineNine);
+    expect(offer.category, RideCategory.pop);
+    expect(offer.value, 7.50);
+    expect(offer.pickupTimeMin, 7);
+    expect(offer.tripTimeMin, 3);
+    expect(offer.pickupDistanceKm, closeTo(0.773, 0.001));
+    expect(offer.tripDistanceKm, closeTo(1.1, 0.001));
+    expect(offer.totalDistanceKm, closeTo(1.873, 0.001));
+  });
+
   test('does not confuse hourly duration with minutes only', () {
     const text = 'UberX R\$ 43 4 min (1.1 km) 1 h e 5 min (23.9 km)';
     final offer = reader.read(text);
