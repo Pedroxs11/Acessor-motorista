@@ -1,6 +1,7 @@
 package com.acessor.motorista
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -45,6 +46,11 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "hasPermission" -> result.success(Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this))
+                    "hasAccessibilityPermission" -> result.success(isAccessibilityServiceEnabled())
+                    "requestAccessibilityPermission" -> {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        result.success(null)
+                    }
                     "requestPermission" -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
                             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -82,6 +88,15 @@ class MainActivity : FlutterActivity() {
             }
 
         registerReceiver(receiver, IntentFilter(OfferAccessibilityService.ACTION_OFFER_TEXT), Context.RECEIVER_NOT_EXPORTED)
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val target = ComponentName(this, OfferAccessibilityService::class.java).flattenToString()
+        return enabledServices.split(':').any { it.equals(target, ignoreCase = true) }
     }
 
     override fun onDestroy() {
