@@ -83,7 +83,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  void _onCapture(dynamic event) {
+  Future<void> _onCapture(dynamic event) async {
     if (event is! Map) return;
     final packageName = event['packageName']?.toString() ?? '';
     final text = event['text']?.toString() ?? '';
