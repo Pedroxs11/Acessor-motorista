@@ -94,6 +94,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final text = event['text']?.toString() ?? '';
     final captureSource = event['captureSource']?.toString() ?? 'unknown';
     final eventType = int.tryParse(event['eventType']?.toString() ?? '') ?? -1;
+    final debugDetails = event['debugDetails']?.toString() ?? '';
     if (packageName.isEmpty) return;
 
     final decision = _pipeline.process(
@@ -148,7 +149,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         _status = 'Última oferta analisada mantida. Aguardando nova oferta válida.';
       }
-      _diagnosis = _diagnose(packageName, text, decision);
+      final baseDiagnosis = _diagnose(packageName, text, decision);
+      _diagnosis = packageName == 'com.app99.driver' && debugDetails.isNotEmpty
+          ? '$baseDiagnosis\nDiagnóstico técnico: $debugDetails'
+          : baseDiagnosis;
     });
   }
 
