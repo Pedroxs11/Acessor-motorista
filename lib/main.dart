@@ -28,9 +28,10 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const _overlayChannel = MethodChannel('com.acessor.motorista/floating_overlay');
   bool _overlayEnabled = false;
+  bool _accessibilityEnabled = false;
   static const _captureChannel =
       EventChannel('com.acessor.motorista/offer_capture');
   static const _supportedPackages = <String>{
@@ -55,6 +56,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshPermissions();
     _captureChannel.receiveBroadcastStream().listen(
       _onCapture,
       onError: (Object error) {
@@ -102,17 +105,41 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _refreshOverlayPermission() async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _refreshPermissions() async {
+    var overlay = false;
+    var accessibility = false;
     try {
-      final allowed = await _overlayChannel.invokeMethod<bool>('hasPermission') ?? false;
-      if (mounted) setState(() => _overlayEnabled = allowed);
+      overlay = await _overlayChannel.invokeMethod<bool>('hasPermission') ?? false;
     } catch (_) {}
+    try {
+      accessibility = await _overlayChannel.invokeMethod<bool>('hasAccessibilityPermission') ?? false;
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _overlayEnabled = overlay;
+      _accessibilityEnabled = accessibility;
+    });
+  }
+
+  Future<void> _requestAccessibilityPermission() async {
+    await _overlayChannel.invokeMethod('requestAccessibilityPermission');
   }
 
   Future<void> _requestOverlayPermission() async {
     await _overlayChannel.invokeMethod('requestPermission');
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await _refreshOverlayPermission();
+    await _refreshPermissions();
     if (_overlayEnabled && _decision != null) await _showFloatingDecision(_decision!);
   }
 
@@ -173,6 +200,61 @@ class _HomePageState extends State<HomePage> {
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Configuração inicial',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Para analisar as ofertas do Uber e 99 por cima de outros apps, ative as duas permissões abaixo. O Android vai pedir sua confirmação.',
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(
+                          _accessibilityEnabled ? Icons.check_circle : Icons.warning_amber_rounded,
+                          color: _accessibilityEnabled ? Colors.green : Colors.orange,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Acessibilidade: ${_accessibilityEnabled ? 'ativa' : 'precisa ativar'}')),
+                        TextButton(
+                          onPressed: _requestAccessibilityPermission,
+                          child: Text(_accessibilityEnabled ? 'Revisar' : 'Ativar'),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Icon(
+                          _overlayEnabled ? Icons.check_circle : Icons.warning_amber_rounded,
+                          color: _overlayEnabled ? Colors.green : Colors.orange,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Cartão flutuante: ${_overlayEnabled ? 'permitido' : 'precisa permitir'}')),
+                        TextButton(
+                          onPressed: _requestOverlayPermission,
+                          child: Text(_overlayEnabled ? 'Revisar' : 'Ativar'),
+                        ),
+                      ],
+                    ),
+                    if (_accessibilityEnabled && _overlayEnabled) ...[
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Permissões concluídas. Abra o Uber ou 99 e aguarde uma oferta para testar o cartão.',
+                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             const Text(
               'Análise automática de ofertas',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
