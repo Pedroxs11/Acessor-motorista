@@ -290,6 +290,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _overlayChannel.invokeMethod('show', {
         'label': decision.analysis.accepted ? 'BOA • ACEITAR' : 'RUIM • NÃO ACEITAR',
         'accepted': decision.analysis.accepted,
+        'valueGood': !decision.analysis.reasons.contains('Valor abaixo do minimo'),
+        'perKmGood': !decision.analysis.reasons.contains('R\$/km abaixo do minimo'),
+        'perHourGood': !decision.analysis.reasons.contains('R\$/hora abaixo do minimo'),
+        'distanceGood': !decision.analysis.reasons.contains('Distancia total acima do maximo'),
+        'timeGood': !decision.analysis.reasons.contains('Tempo total acima do maximo'),
         'value': 'R\$ ${offer.value.toStringAsFixed(2)}',
         'perKm': 'R\$ ${offer.reaisPerKm.toStringAsFixed(2)}',
         'perHour': 'R\$ ${offer.reaisPerHour.toStringAsFixed(0)}',

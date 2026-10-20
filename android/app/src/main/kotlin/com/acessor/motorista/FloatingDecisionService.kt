@@ -36,6 +36,11 @@ class FloatingDecisionService : Service() {
         }
         val label = intent?.getStringExtra(EXTRA_LABEL) ?: "ANALISANDO"
         val accepted = intent?.getBooleanExtra(EXTRA_ACCEPTED, false) ?: false
+        val valueGood = intent?.getBooleanExtra(EXTRA_VALUE_GOOD, true) ?: true
+        val perKmGood = intent?.getBooleanExtra(EXTRA_PER_KM_GOOD, true) ?: true
+        val perHourGood = intent?.getBooleanExtra(EXTRA_PER_HOUR_GOOD, true) ?: true
+        val distanceGood = intent?.getBooleanExtra(EXTRA_DISTANCE_GOOD, true) ?: true
+        val timeGood = intent?.getBooleanExtra(EXTRA_TIME_GOOD, true) ?: true
         val value = intent?.getStringExtra(EXTRA_VALUE).orEmpty()
         val perKm = intent?.getStringExtra(EXTRA_PER_KM).orEmpty()
         val perHour = intent?.getStringExtra(EXTRA_PER_HOUR).orEmpty()
@@ -46,14 +51,15 @@ class FloatingDecisionService : Service() {
         val rating = intent?.getStringExtra(EXTRA_RATING).orEmpty()
         val origin = intent?.getStringExtra(EXTRA_ORIGIN).orEmpty()
         val destination = intent?.getStringExtra(EXTRA_DESTINATION).orEmpty()
-        showCard(label, accepted, value, perKm, perHour, perMinute, distance, time, category, rating, origin, destination)
+        showCard(label, accepted, value, perKm, perHour, perMinute, distance, time, category, rating, origin, destination, valueGood, perKmGood, perHourGood, distanceGood, timeGood)
         return START_NOT_STICKY
     }
 
     private fun showCard(
         label: String, accepted: Boolean, value: String, perKm: String, perHour: String,
         perMinute: String, distance: String, time: String, category: String, rating: String,
-        origin: String, destination: String
+        origin: String, destination: String, valueGood: Boolean, perKmGood: Boolean,
+        perHourGood: Boolean, distanceGood: Boolean, timeGood: Boolean
     ) {
         removeCard()
         val bg = GradientDrawable().apply {
@@ -75,7 +81,7 @@ class FloatingDecisionService : Service() {
         }
         root.addView(headline)
         val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun metric(title: String, amount: String) {
+        fun metric(title: String, amount: String, good: Boolean) {
             if (amount.isBlank()) return
             val column = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -86,17 +92,18 @@ class FloatingDecisionService : Service() {
             })
             column.addView(TextView(this).apply {
                 text = amount; textSize = 15f; typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.WHITE)
+                setTextColor(if (good) Color.rgb(72, 230, 142) else Color.rgb(255, 104, 104))
             })
             metrics.addView(column)
         }
-        metric("VALOR", value)
-        metric("R$/KM", perKm)
-        metric("R$/H", perHour)
-        metric("R$/MIN", perMinute)
+        metric("VALOR", value, valueGood)
+        metric("R$/KM", perKm, perKmGood)
+        metric("R$/H", perHour, perHourGood)
+        metric("R$/MIN", perMinute, perHourGood)
+        metric("DISTÂNCIA", distance, distanceGood)
+        metric("TEMPO", time, timeGood)
         root.addView(metrics)
         val details = listOfNotNull(
-            listOf(time, distance).filter { it.isNotBlank() }.joinToString(" • ").takeIf { it.isNotBlank() },
             category.takeIf { it.isNotBlank() },
             rating.takeIf { it.isNotBlank() },
             origin.takeIf { it.isNotBlank() },
@@ -151,6 +158,11 @@ class FloatingDecisionService : Service() {
         const val EXTRA_HIDE = "hide"
         const val EXTRA_LABEL = "label"
         const val EXTRA_ACCEPTED = "accepted"
+        const val EXTRA_VALUE_GOOD = "value_good"
+        const val EXTRA_PER_KM_GOOD = "per_km_good"
+        const val EXTRA_PER_HOUR_GOOD = "per_hour_good"
+        const val EXTRA_DISTANCE_GOOD = "distance_good"
+        const val EXTRA_TIME_GOOD = "time_good"
         const val EXTRA_VALUE = "value"
         const val EXTRA_PER_KM = "per_km"
         const val EXTRA_PER_HOUR = "per_hour"
