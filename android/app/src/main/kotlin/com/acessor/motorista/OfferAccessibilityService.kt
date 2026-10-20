@@ -44,10 +44,33 @@ class OfferAccessibilityService : AccessibilityService() {
             ""
         }
 
-        val text = if (sourceText.isNotBlank()) sourceText else rootText
+        // Some driver apps render offers in a separate interactive window.
+        // Search only windows owned by the event package; never read our own overlay.
+        var matchingWindowText = ""
+        if (sourceText.isBlank() && rootText.isBlank()) {
+            matchingWindowText = runCatching {
+                windows.asSequence()
+                    .mapNotNull { window -> runCatching { window.root }.getOrNull() }
+                    .filter { windowRoot ->
+                        runCatching { windowRoot.packageName?.toString() == packageName }.getOrDefault(false)
+                    }
+                    .mapNotNull { windowRoot ->
+                        runCatching { buildText(windowRoot).trim() }.getOrNull()
+                    }
+                    .firstOrNull { it.isNotBlank() }
+                    .orEmpty()
+            }.getOrDefault("")
+        }
+
+        val text = when {
+            sourceText.isNotBlank() -> sourceText
+            rootText.isNotBlank() -> rootText
+            else -> matchingWindowText
+        }
         val captureSource = when {
             sourceText.isNotBlank() -> "event_source"
             rootText.isNotBlank() -> "active_window"
+            matchingWindowText.isNotBlank() -> "matching_window"
             else -> "no_matching_app_node"
         }
 
