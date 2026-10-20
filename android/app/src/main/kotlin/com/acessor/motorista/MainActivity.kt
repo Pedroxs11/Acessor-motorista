@@ -51,6 +51,37 @@ class MainActivity : FlutterActivity() {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(null)
                     }
+                    "loadCriteria" -> {
+                        val prefs = getSharedPreferences("driver_criteria", Context.MODE_PRIVATE)
+                        result.success(mapOf(
+                            "enabled" to prefs.getBoolean("enabled", false),
+                            "minValue" to prefs.getFloat("minValue", 0f).toDouble(),
+                            "minReaisPerKm" to prefs.getFloat("minReaisPerKm", 2f).toDouble(),
+                            "minReaisPerHour" to prefs.getFloat("minReaisPerHour", 40f).toDouble(),
+                            "maxPickupDistanceKm" to prefs.getFloat("maxPickupDistanceKm", 0f).toDouble(),
+                            "maxPickupTimeMin" to prefs.getInt("maxPickupTimeMin", 0)
+                        ))
+                    }
+                    "saveCriteria" -> {
+                        val data = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                        fun number(key: String, fallback: Float): Float {
+                            val value = data[key]
+                            return when (value) {
+                                is Number -> value.toFloat()
+                                else -> value?.toString()?.replace(',', '.')?.toFloatOrNull() ?: fallback
+                            }
+                        }
+                        val prefs = getSharedPreferences("driver_criteria", Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putBoolean("enabled", true)
+                            .putFloat("minValue", number("minValue", 0f))
+                            .putFloat("minReaisPerKm", number("minReaisPerKm", 2f))
+                            .putFloat("minReaisPerHour", number("minReaisPerHour", 40f))
+                            .putFloat("maxPickupDistanceKm", number("maxPickupDistanceKm", 0f))
+                            .putInt("maxPickupTimeMin", number("maxPickupTimeMin", 0f).toInt())
+                            .apply()
+                        result.success(true)
+                    }
                     "requestPermission" -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
                             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
