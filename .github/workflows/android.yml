@@ -32,6 +32,33 @@ jobs:
             flutter create --platforms=android /tmp/flutter_android_scaffold
             cp -Rn /tmp/flutter_android_scaffold/android/. android/
             find android/app -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -exec sed -i 's/com\.example\.flutter_android_scaffold/com\.acessor\.motorista/g' {} +
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          settings = Path("android/settings.gradle.kts")
+          if settings.exists():
+              source = settings.read_text(encoding="utf-8")
+              block = re.search(r"pluginManagement\s*\{(.*?)\n\}", source, re.S)
+              if block:
+                  body = block.group(1)
+                  repos = re.search(r"repositories\s*\{(.*?)\n\s*\}", body, re.S)
+                  if repos:
+                      repo_body = repos.group(1)
+                      additions = []
+                      if "google()" not in repo_body:
+                          additions.append("google()")
+                      if "mavenCentral()" not in repo_body:
+                          additions.append("mavenCentral()")
+                      if additions:
+                          replacement = repos.group(0).replace(repos.group(1), repos.group(1) + "\n        " + "\n        ".join(additions))
+                          source = source[:block.start()] + block.group(0).replace(repos.group(0), replacement) + source[block.end():]
+                  else:
+                      source = source.replace("pluginManagement {", "pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }", 1)
+              else:
+                  source = "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\n" + source
+              settings.write_text(source, encoding="utf-8")
+              print("Ensured Google Maven and Maven Central are configured for plugin resolution.")
+          PY
           fi
 
       - name: Set Android SDK levels required by Google Play
