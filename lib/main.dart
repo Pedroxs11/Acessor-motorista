@@ -84,10 +84,18 @@ class _HomePageState extends State<HomePage> {
       _lastCapturedText = text;
       _lastCaptureSource = captureSource;
       _lastEventType = eventType;
-      _decision = decision;
-      _status = decision != null
-          ? 'Oferta analisada automaticamente.'
-          : 'Evento recebido, mas a oferta não foi interpretada.';
+
+      // Ignore empty/unparsed follow-up events for the visible result.
+      // Driver apps emit many window-change events after the offer appears;
+      // those events must not erase the last successfully analyzed offer.
+      if (decision != null) {
+        _decision = decision;
+        _status = 'Oferta analisada automaticamente. Última análise mantida na tela.';
+      } else if (_decision == null) {
+        _status = 'Evento recebido, mas a oferta não foi interpretada.';
+      } else {
+        _status = 'Última oferta analisada mantida. Aguardando nova oferta válida.';
+      }
       _diagnosis = _diagnose(packageName, text, decision);
     });
   }
