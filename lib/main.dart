@@ -29,6 +29,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const _overlayChannel = MethodChannel('com.acessor.motorista/floating_overlay');
+  bool _overlayEnabled = false;
   static const _captureChannel =
       EventChannel('com.acessor.motorista/offer_capture');
   static const _supportedPackages = <String>{
