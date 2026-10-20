@@ -21,19 +21,38 @@ class OfferAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in targetPackages) return
 
-        // Prefer the node that triggered the event: the active window may be stale
-        // or may not represent the UI element that actually changed.
-        val sourceText = runCatching { event.source?.let { buildText(it) } }.getOrNull().orEmpty().trim()
-        val rootText = if (sourceText.isBlank()) {
-            runCatching { rootInActiveWindow?.let { buildText(it) } }.getOrNull().orEmpty().trim()
+        // Never parse text from another app's window (for example, our own
+        // diagnostic screen or an accessibility overlay). Node package names
+        // are checked independently because active-window roots can be stale.
+        val source = runCatching { event.source }.getOrNull()
+        val sourcePackage = runCatching { source?.packageName?.toString() }.getOrNull()
+        val sourceText = if (sourcePackage == packageName) {
+            runCatching { source?.let { buildText(it) } }.getOrNull().orEmpty().trim()
         } else {
             ""
         }
-        val text = if (sourceText.isNotBlank()) sourceText else rootText
-        val captureSource = if (sourceText.isNotBlank()) "event_source" else "active_window"
 
-        // Send even empty captures for diagnostics, so the app can distinguish
-        // "no event" from "event arrived but no accessible text was exposed".
+        val root = if (sourceText.isBlank()) {
+            runCatching { rootInActiveWindow }.getOrNull()
+        } else {
+            null
+        }
+        val rootPackage = runCatching { root?.packageName?.toString() }.getOrNull()
+        val rootText = if (sourceText.isBlank() && rootPackage == packageName) {
+            runCatching { root?.let { buildText(it) } }.getOrNull().orEmpty().trim()
+        } else {
+            ""
+        }
+
+        val text = if (sourceText.isNotBlank()) sourceText else rootText
+        val captureSource = when {
+            sourceText.isNotBlank() -> "event_source"
+            rootText.isNotBlank() -> "active_window"
+            else -> "no_matching_app_node"
+        }
+
+        // Keep empty events for diagnostics, but never substitute text from
+        // another package just to make the capture appear populated.
         sendBroadcast(Intent(ACTION_OFFER_TEXT).apply {
             setPackage(applicationContext.packageName)
             putExtra(EXTRA_PACKAGE, packageName)
