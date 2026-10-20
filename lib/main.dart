@@ -112,8 +112,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         offer.destination,
       ].join('|');
       if (_overlayEnabled && fingerprint != _lastOfferFingerprint) {
-        _lastOfferFingerprint = fingerprint;
-        _showFloatingDecision(decision);
+        // Only mark this offer as displayed after Android confirms the update.
+        // If the channel/service temporarily fails, the next accessibility event
+        // for the same offer retries instead of leaving stale overlay data.
+        final displayed = await _showFloatingDecision(decision);
+        if (displayed) _lastOfferFingerprint = fingerprint;
       }
     } else if (_overlayEnabled && _decision != null) {
       _overlayHideTimer?.cancel();
@@ -281,7 +284,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_overlayEnabled && _decision != null) await _showFloatingDecision(_decision!);
   }
 
-  Future<void> _showFloatingDecision(OfferDecision decision) async {
+  Future<bool> _showFloatingDecision(OfferDecision decision) async {
     final offer = decision.offer;
     try {
       await _overlayChannel.invokeMethod('show', {
@@ -297,7 +300,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'origin': offer.origin,
         'destination': offer.destination,
       });
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _hideFloatingDecision() async {
