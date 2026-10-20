@@ -41,6 +41,16 @@ class OfferAccessibilityService : AccessibilityService() {
             null
         }
         val rootPackage = runCatching { root?.packageName?.toString() }.getOrNull()
+        val windowDiagnostics = runCatching {
+            windows.mapNotNull { window ->
+                val windowRoot = runCatching { window.root }.getOrNull() ?: return@mapNotNull null
+                val owner = runCatching { windowRoot.packageName?.toString() }.getOrNull() ?: "null"
+                val nodeCount = countTextNodes(windowRoot)
+                "$owner:nodes=$nodeCount"
+            }.take(8).joinToString(",")
+        }.getOrDefault("windows_unavailable")
+        val sourceNodeCount = runCatching { source?.let { countTextNodes(it) } ?: 0 }.getOrDefault(-1)
+        val rootNodeCount = runCatching { root?.let { countTextNodes(it) } ?: 0 }.getOrDefault(-1)
         val rootText = if (sourceText.isBlank() && rootPackage == packageName) {
             runCatching { root?.let { buildText(it) } }.getOrNull().orEmpty().trim()
         } else {
@@ -85,7 +95,19 @@ class OfferAccessibilityService : AccessibilityService() {
             putExtra(EXTRA_TEXT, text)
             putExtra(EXTRA_EVENT_TYPE, event.eventType)
             putExtra(EXTRA_CAPTURE_SOURCE, captureSource)
+            putExtra(EXTRA_DEBUG_DETAILS, "event=${event.eventType};sourcePkg=${sourcePackage ?: "null"};sourceNodes=$sourceNodeCount;activePkg=${rootPackage ?: "null"};activeNodes=$rootNodeCount;windows=[$windowDiagnostics]")
         })
+    }
+
+    private fun countTextNodes(node: AccessibilityNodeInfo): Int {
+        var count = 0
+        fun visit(current: AccessibilityNodeInfo?) {
+            if (current == null) return
+            if (!current.text.isNullOrBlank() || !current.contentDescription.isNullOrBlank()) count++
+            for (i in 0 until current.childCount) runCatching { current.getChild(i) }.getOrNull()?.let(::visit)
+        }
+        visit(node)
+        return count
     }
 
     private fun buildText(node: AccessibilityNodeInfo): String {
@@ -119,5 +141,6 @@ class OfferAccessibilityService : AccessibilityService() {
         const val EXTRA_TEXT = "offer_text"
         const val EXTRA_EVENT_TYPE = "event_type"
         const val EXTRA_CAPTURE_SOURCE = "capture_source"
+        const val EXTRA_DEBUG_DETAILS = "debug_details"
     }
 }
