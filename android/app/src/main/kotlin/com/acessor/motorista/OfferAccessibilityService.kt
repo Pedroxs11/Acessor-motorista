@@ -26,7 +26,10 @@ class OfferAccessibilityService : AccessibilityService() {
         // are checked independently because active-window roots can be stale.
         val source = runCatching { event.source }.getOrNull()
         val sourcePackage = runCatching { source?.packageName?.toString() }.getOrNull()
-        val sourceText = if (sourcePackage == packageName) {
+        // Some Android/MIUI accessibility events omit the source node's package
+        // even though the event itself came from the target app. In that case,
+        // inspect only event.source (not the active window) as a safe first fallback.
+        val sourceText = if (sourcePackage == packageName || (source != null && sourcePackage.isNullOrBlank())) {
             runCatching { source?.let { buildText(it) } }.getOrNull().orEmpty().trim()
         } else {
             ""
