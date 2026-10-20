@@ -35,7 +35,14 @@ class OfferAccessibilityService : AccessibilityService() {
             ""
         }
 
-        val root = if (sourceText.isBlank()) {
+        // Some apps attach useful text to the event even when the source node is empty.
+        // The event package was checked above, so this text belongs to the target app.
+        val eventText = runCatching {
+            event.text.joinToString(" ") { item -> item?.toString().orEmpty().trim() }
+                .ifBlank { event.contentDescription?.toString().orEmpty().trim() }
+        }.getOrDefault("")
+
+        val root = if (sourceText.isBlank() && eventText.isBlank()) {
             runCatching { rootInActiveWindow }.getOrNull()
         } else {
             null
@@ -51,7 +58,7 @@ class OfferAccessibilityService : AccessibilityService() {
         }.getOrDefault("windows_unavailable")
         val sourceNodeCount = runCatching { source?.let { countTextNodes(it) } ?: 0 }.getOrDefault(-1)
         val rootNodeCount = runCatching { root?.let { countTextNodes(it) } ?: 0 }.getOrDefault(-1)
-        val rootText = if (sourceText.isBlank() && rootPackage == packageName) {
+        val rootText = if (sourceText.isBlank() && eventText.isBlank() && rootPackage == packageName) {
             runCatching { root?.let { buildText(it) } }.getOrNull().orEmpty().trim()
         } else {
             ""
@@ -60,7 +67,7 @@ class OfferAccessibilityService : AccessibilityService() {
         // Some driver apps render offers in a separate interactive window.
         // Search only windows owned by the event package; never read our own overlay.
         var matchingWindowText = ""
-        if (sourceText.isBlank() && rootText.isBlank()) {
+        if (sourceText.isBlank() && eventText.isBlank() && rootText.isBlank()) {
             matchingWindowText = runCatching {
                 windows.asSequence()
                     .mapNotNull { window -> runCatching { window.root }.getOrNull() }
@@ -77,11 +84,13 @@ class OfferAccessibilityService : AccessibilityService() {
 
         val text = when {
             sourceText.isNotBlank() -> sourceText
+            eventText.isNotBlank() -> eventText
             rootText.isNotBlank() -> rootText
             else -> matchingWindowText
         }
         val captureSource = when {
             sourceText.isNotBlank() -> "event_source"
+            eventText.isNotBlank() -> "event_text"
             rootText.isNotBlank() -> "active_window"
             matchingWindowText.isNotBlank() -> "matching_window"
             else -> "no_matching_app_node"
@@ -95,7 +104,7 @@ class OfferAccessibilityService : AccessibilityService() {
             putExtra(EXTRA_TEXT, text)
             putExtra(EXTRA_EVENT_TYPE, event.eventType)
             putExtra(EXTRA_CAPTURE_SOURCE, captureSource)
-            putExtra(EXTRA_DEBUG_DETAILS, "event=${event.eventType};sourcePkg=${sourcePackage ?: "null"};sourceNodes=$sourceNodeCount;activePkg=${rootPackage ?: "null"};activeNodes=$rootNodeCount;windows=[$windowDiagnostics]")
+            putExtra(EXTRA_DEBUG_DETAILS, "event=${event.eventType};sourcePkg=${sourcePackage ?: "null"};sourceNodes=$sourceNodeCount;eventTextChars=${eventText.length};activePkg=${rootPackage ?: "null"};activeNodes=$rootNodeCount;windows=[$windowDiagnostics]")
         })
     }
 
