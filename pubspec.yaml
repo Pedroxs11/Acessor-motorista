@@ -1,7 +1,7 @@
 name: acessor_motorista
 description: Analise de ofertas para motoristas de aplicativo.
 publish_to: "none"
-version: 0.1.10+18
+version: 0.1.10+19
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
