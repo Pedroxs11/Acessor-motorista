@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/driver_criteria.dart';
 import 'core/offer_decision.dart';
 import 'readers/offer_pipeline.dart';
 
@@ -45,6 +46,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   };
 
   final _pipeline = const OfferPipeline();
+  final _minValueController = TextEditingController(text: '0');
+  final _minPerKmController = TextEditingController(text: '2');
+  final _minPerHourController = TextEditingController(text: '40');
+  final _maxPickupDistanceController = TextEditingController(text: '0');
+  final _maxPickupTimeController = TextEditingController(text: '0');
+  DriverCriteria? _criteria;
+  bool _savingCriteria = false;
   OfferDecision? _decision;
   String _status = 'Aguardando evento de acessibilidade...';
   String _lastPackage = '';
@@ -58,6 +66,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshPermissions();
+    _loadCriteria();
     _captureChannel.receiveBroadcastStream().listen(
       _onCapture,
       onError: (Object error) {
@@ -81,6 +90,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final decision = _pipeline.process(
       packageName: packageName,
       capturedText: text,
+      criteria: _criteria,
     );
 
     if (!mounted) return;
@@ -113,6 +123,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _minValueController.dispose();
+    _minPerKmController.dispose();
+    _minPerHourController.dispose();
+    _maxPickupDistanceController.dispose();
+    _maxPickupTimeController.dispose();
     super.dispose();
   }
 
@@ -130,6 +145,99 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _overlayEnabled = overlay;
       _accessibilityEnabled = accessibility;
     });
+  }
+
+  Future<void> _loadCriteria() async {
+    try {
+      final data = await _overlayChannel.invokeMapMethod<String, dynamic>('loadCriteria');
+      if (data == null || !mounted) return;
+      final criteria = DriverCriteria.fromMap(data);
+      setState(() {
+        _minValueController.text = criteria.minValue.toStringAsFixed(2);
+        _minPerKmController.text = criteria.minReaisPerKm.toStringAsFixed(2);
+        _minPerHourController.text = criteria.minReaisPerHour.toStringAsFixed(2);
+        _maxPickupDistanceController.text = criteria.maxPickupDistanceKm.toStringAsFixed(1);
+        _maxPickupTimeController.text = criteria.maxPickupTimeMin.toString();
+        _criteria = data['enabled'] == true ? criteria : null;
+      });
+    } catch (_) {
+      // Settings remain editable with suggested initial values if loading fails.
+    }
+  }
+
+  double _readNumber(TextEditingController controller) {
+    return double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? 0;
+  }
+
+  Future<void> _saveCriteria() async {
+    final values = [
+      _readNumber(_minValueController),
+      _readNumber(_minPerKmController),
+      _readNumber(_minPerHourController),
+      _readNumber(_maxPickupDistanceController),
+      _readNumber(_maxPickupTimeController),
+    ];
+    if (values.any((value) => !value.isFinite || value < 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Use somente valores iguais ou maiores que zero.')),
+      );
+      return;
+    }
+    final criteria = DriverCriteria(
+      minValue: values[0],
+      minReaisPerKm: values[1],
+      minReaisPerHour: values[2],
+      maxPickupDistanceKm: values[3],
+      maxPickupTimeMin: values[4].toInt(),
+    );
+    setState(() => _savingCriteria = true);
+    try {
+      final saved = await _overlayChannel.invokeMethod<bool>(
+        'saveCriteria',
+        criteria.toMap(),
+      );
+      if (saved != true) throw PlatformException(code: 'SAVE_FAILED');
+      if (!mounted) return;
+      final revisedDecision = _lastPackage.isNotEmpty
+          ? _pipeline.process(
+              packageName: _lastPackage,
+              capturedText: _lastCapturedText,
+              criteria: criteria,
+            )
+          : null;
+      setState(() {
+        _criteria = criteria;
+        if (revisedDecision != null) _decision = revisedDecision;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Critérios salvos neste aparelho.')),
+      );
+      if (_overlayEnabled && _decision != null) {
+        await _showFloatingDecision(_decision!);
+      }
+    } on PlatformException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível salvar os critérios.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingCriteria = false);
+    }
+  }
+
+  Widget _criteriaField(String label, TextEditingController controller) {
+    return Expanded(
+      child: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    );
   }
 
   Future<void> _requestAccessibilityPermission() async {
@@ -250,6 +358,74 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
                       ),
                     ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Critérios da corrida',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _criteria == null
+                          ? 'Você está usando as regras atuais por categoria. Salve para ativar seus próprios limites.'
+                          : 'Critérios personalizados ativos neste aparelho.',
+                      style: TextStyle(
+                        color: _criteria == null ? Colors.grey[700] : Colors.green[700],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _criteriaField('Valor mínimo (R\$)', _minValueController),
+                        const SizedBox(width: 10),
+                        _criteriaField('Mínimo R\$/km', _minPerKmController),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _criteriaField('Mínimo R\$/hora', _minPerHourController),
+                        const SizedBox(width: 10),
+                        _criteriaField('Máx. embarque (km)', _maxPickupDistanceController),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _criteriaField('Máx. espera (min)', _maxPickupTimeController),
+                        const SizedBox(width: 10),
+                        const Expanded(child: SizedBox()),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Preencha 0 para desativar um limite. Valor mínimo, R\$/km e R\$/hora se aplicam às ofertas; distância e tempo até o embarque usam os dados disponíveis na tela da plataforma. Os limites totais atuais continuam variando conforme a categoria.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _savingCriteria ? null : _saveCriteria,
+                        icon: _savingCriteria
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(_savingCriteria ? 'Salvando...' : 'Salvar critérios'),
+                      ),
+                    ),
                   ],
                 ),
               ),
