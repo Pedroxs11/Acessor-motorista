@@ -4,8 +4,113 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.FlutterInjector
+import io.flutter.embedding.engine.dart.DartExecutor
+import io.flutter.plugin.common.MethodChannel
 
 class OfferAccessibilityService : AccessibilityService() {
+    private var backgroundFlutterEngine: FlutterEngine? = null
+    private var backgroundChannel: MethodChannel? = null
+    private var backgroundReady = false
+    private val pendingOffers = ArrayDeque<Pair<String, String>>()
+    private var lastBackgroundFingerprint: String = ""
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        runCatching {
+            val engine = FlutterEngine(applicationContext)
+            backgroundFlutterEngine = engine
+            val channel = MethodChannel(
+                engine.dartExecutor.binaryMessenger,
+                "com.acessor.motorista/background_offer_processor"
+            )
+            backgroundChannel = channel
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "processorReady") {
+                    backgroundReady = true
+                    result.success(true)
+                    while (pendingOffers.isNotEmpty()) {
+                        val (packageName, text) = pendingOffers.removeFirst()
+                        processOfferInBackground(packageName, text)
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
+            engine.dartExecutor.executeDartEntrypoint(
+                DartExecutor.DartEntrypoint(
+                    FlutterInjector.instance().flutterLoader().findAppBundlePath(),
+                    "backgroundOfferMain"
+                )
+            )
+        }.onFailure {
+            backgroundReady = false
+        }
+    }
+
+    private fun processOfferInBackground(packageName: String, text: String) {
+        if (text.isBlank()) return
+        if (!backgroundReady) {
+            if (pendingOffers.size >= 10) pendingOffers.removeFirst()
+            pendingOffers.addLast(packageName to text)
+            return
+        }
+        val fingerprint = "$packageName|$text"
+        if (fingerprint == lastBackgroundFingerprint) return
+        val prefs = getSharedPreferences("driver_criteria", MODE_PRIVATE)
+        val criteria = mapOf(
+            "minValue" to prefs.getFloat("minValue", 0f).toDouble(),
+            "minReaisPerKm" to prefs.getFloat("minReaisPerKm", 2f).toDouble(),
+            "minReaisPerHour" to prefs.getFloat("minReaisPerHour", 40f).toDouble(),
+            "maxPickupDistanceKm" to prefs.getFloat("maxPickupDistanceKm", 0f).toDouble(),
+            "maxPickupTimeMin" to prefs.getInt("maxPickupTimeMin", 0)
+        )
+        backgroundChannel?.invokeMethod(
+            "processOffer",
+            mapOf(
+                "packageName" to packageName,
+                "text" to text,
+                "criteriaEnabled" to prefs.getBoolean("enabled", false),
+                "criteria" to criteria
+            ),
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    val data = result as? Map<*, *> ?: return
+                    lastBackgroundFingerprint = fingerprint
+                    val intent = Intent(this@OfferAccessibilityService, FloatingDecisionService::class.java)
+                    intent.putExtra(FloatingDecisionService.EXTRA_LABEL, data["label"]?.toString() ?: "ANALISANDO")
+                    intent.putExtra(FloatingDecisionService.EXTRA_ACCEPTED, data["accepted"] as? Boolean ?: false)
+                    intent.putExtra(FloatingDecisionService.EXTRA_VALUE_GOOD, data["valueGood"] as? Boolean ?: true)
+                    intent.putExtra(FloatingDecisionService.EXTRA_PER_KM_GOOD, data["perKmGood"] as? Boolean ?: true)
+                    intent.putExtra(FloatingDecisionService.EXTRA_PER_HOUR_GOOD, data["perHourGood"] as? Boolean ?: true)
+                    intent.putExtra(FloatingDecisionService.EXTRA_DISTANCE_GOOD, data["distanceGood"] as? Boolean ?: true)
+                    intent.putExtra(FloatingDecisionService.EXTRA_TIME_GOOD, data["timeGood"] as? Boolean ?: true)
+                    intent.putExtra(FloatingDecisionService.EXTRA_VALUE, data["value"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_PER_KM, data["perKm"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_PER_HOUR, data["perHour"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_PER_MINUTE, data["perMinute"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_DISTANCE, data["distance"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_TIME, data["time"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_CATEGORY, data["category"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_ORIGIN, data["origin"]?.toString().orEmpty())
+                    intent.putExtra(FloatingDecisionService.EXTRA_DESTINATION, data["destination"]?.toString().orEmpty())
+                    startService(intent)
+                }
+                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) = Unit
+                override fun notImplemented() = Unit
+            }
+        )
+    }
+
+    override fun onDestroy() {
+        backgroundFlutterEngine?.destroy()
+        backgroundFlutterEngine = null
+        backgroundChannel = null
+        backgroundReady = false
+        pendingOffers.clear()
+        super.onDestroy()
+    }
     private val targetPackages = setOf(
         "com.ubercab.driver",
         "com.app99.driver",
@@ -105,6 +210,8 @@ class OfferAccessibilityService : AccessibilityService() {
         } else {
             "event=${event.eventType};capture=$captureSource;chars=${text.length}"
         }
+
+        processOfferInBackground(packageName, text)
 
         sendBroadcast(Intent(ACTION_OFFER_TEXT).apply {
             setPackage(applicationContext.packageName)

@@ -686,3 +686,54 @@ class _DecisionCard extends StatelessWidget {
     );
   }
 }
+
+
+/// Entry point sem interface, executado pelo AccessibilityService para que
+/// a análise continue ativa mesmo quando a Activity principal é fechada.
+@pragma('vm:entry-point')
+Future<void> backgroundOfferMain() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('com.acessor.motorista/background_offer_processor');
+  const pipeline = OfferPipeline();
+
+  channel.setMethodCallHandler((call) async {
+    if (call.method != 'processOffer') return null;
+    final data = Map<String, dynamic>.from(call.arguments as Map);
+    final criteriaData = Map<dynamic, dynamic>.from(
+      (data['criteria'] as Map?) ?? const <dynamic, dynamic>{},
+    );
+    final criteria = data['criteriaEnabled'] == true
+        ? DriverCriteria.fromMap(criteriaData)
+        : null;
+    final decision = pipeline.process(
+      packageName: data['packageName']?.toString() ?? '',
+      capturedText: data['text']?.toString() ?? '',
+      criteria: criteria,
+    );
+    if (decision == null) return null;
+
+    final offer = decision.offer;
+    final reasons = decision.analysis.reasons;
+    return <String, Object>{
+      'label': decision.analysis.accepted ? 'BOA • ACEITAR' : 'RUIM • NÃO ACEITAR',
+      'accepted': decision.analysis.accepted,
+      'valueGood': !reasons.contains('Valor abaixo do minimo'),
+      'perKmGood': !reasons.contains('R\$/km abaixo do minimo'),
+      'perHourGood': !reasons.contains('R\$/hora abaixo do minimo'),
+      'distanceGood': !reasons.contains('Distancia total acima do maximo'),
+      'timeGood': !reasons.contains('Tempo total acima do maximo'),
+      'value': 'R\$ ${offer.value.toStringAsFixed(2)}',
+      'perKm': 'R\$ ${offer.reaisPerKm.toStringAsFixed(2)}',
+      'perHour': 'R\$ ${offer.reaisPerHour.toStringAsFixed(0)}',
+      'perMinute': offer.totalTimeMin > 0
+          ? 'R\$ ${(offer.value / offer.totalTimeMin).toStringAsFixed(2)}'
+          : '',
+      'distance': '${offer.totalDistanceKm.toStringAsFixed(1)} km',
+      'time': '${offer.totalTimeMin} min',
+      'category': offer.category.name,
+      'origin': offer.origin,
+      'destination': offer.destination,
+    };
+  });
+  await channel.invokeMethod<void>('processorReady');
+}
