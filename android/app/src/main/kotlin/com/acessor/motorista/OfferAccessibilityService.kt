@@ -21,29 +21,30 @@ class OfferAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in targetPackages) return
 
-        val source = runCatching { event.source }.getOrNull()
+        // Read the cheap event payload first. On busy offer screens, traversing
+        // the source tree before checking event.text can delay the useful offer.
+        val eventText = runCatching {
+            event.text.joinToString(" ") { item -> item?.toString().orEmpty().trim() }
+                .ifBlank { event.contentDescription?.toString().orEmpty().trim() }
+        }.getOrDefault("")
+
+        val source = if (eventText.isBlank()) runCatching { event.source }.getOrNull() else null
         val sourcePackage = runCatching { source?.packageName?.toString() }.getOrNull()
-        val sourceText = if (sourcePackage == packageName ||
-            (source != null && sourcePackage.isNullOrBlank())
+        val sourceText = if (eventText.isBlank() &&
+            (sourcePackage == packageName || (source != null && sourcePackage.isNullOrBlank()))
         ) {
             runCatching { source?.let { buildText(it) } }.getOrNull().orEmpty().trim()
         } else {
             ""
         }
 
-        val eventText = runCatching {
-            event.text.joinToString(" ") { item -> item?.toString().orEmpty().trim() }
-                .ifBlank { event.contentDescription?.toString().orEmpty().trim() }
-        }.getOrDefault("")
-
-        // Fast path: only query the active window when the event itself had no text.
-        val root = if (sourceText.isBlank() && eventText.isBlank()) {
+        val root = if (eventText.isBlank() && sourceText.isBlank()) {
             runCatching { rootInActiveWindow }.getOrNull()
         } else {
             null
         }
         val rootPackage = runCatching { root?.packageName?.toString() }.getOrNull()
-        val rootText = if (sourceText.isBlank() && eventText.isBlank() &&
+        val rootText = if (eventText.isBlank() && sourceText.isBlank() &&
             rootPackage == packageName
         ) {
             runCatching { root?.let { buildText(it) } }.getOrNull().orEmpty().trim()
@@ -51,9 +52,8 @@ class OfferAccessibilityService : AccessibilityService() {
             ""
         }
 
-        // Expensive multi-window traversal is a fallback, not part of every event.
         var matchingWindowText = ""
-        if (sourceText.isBlank() && eventText.isBlank() && rootText.isBlank()) {
+        if (eventText.isBlank() && sourceText.isBlank() && rootText.isBlank()) {
             matchingWindowText = runCatching {
                 windows.asSequence()
                     .mapNotNull { window -> runCatching { window.root }.getOrNull() }
@@ -70,22 +70,19 @@ class OfferAccessibilityService : AccessibilityService() {
         }
 
         val text = when {
-            sourceText.isNotBlank() -> sourceText
             eventText.isNotBlank() -> eventText
+            sourceText.isNotBlank() -> sourceText
             rootText.isNotBlank() -> rootText
             else -> matchingWindowText
         }
         val captureSource = when {
-            sourceText.isNotBlank() -> "event_source"
             eventText.isNotBlank() -> "event_text"
+            sourceText.isNotBlank() -> "event_source"
             rootText.isNotBlank() -> "active_window"
             matchingWindowText.isNotBlank() -> "matching_window"
             else -> "no_matching_app_node"
         }
 
-        // Detailed node/window counts are only collected for failed captures.
-        // This avoids recursively traversing the accessibility tree on every
-        // event while keeping the diagnostics needed to troubleshoot the 99.
         val debugDetails = if (text.isBlank()) {
             val sourceNodeCount = runCatching {
                 source?.let { countTextNodes(it) } ?: 0
@@ -135,22 +132,18 @@ class OfferAccessibilityService : AccessibilityService() {
     private fun buildText(node: AccessibilityNodeInfo): String {
         val result = StringBuilder()
         val visited = HashSet<String>()
-
         fun visit(current: AccessibilityNodeInfo?) {
             if (current == null) return
-
             current.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 if (visited.add("t:$it")) result.append(it).append(' ')
             }
             current.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 if (visited.add("d:$it")) result.append(it).append(' ')
             }
-
             for (i in 0 until current.childCount) {
                 runCatching { current.getChild(i) }.getOrNull()?.let(::visit)
             }
         }
-
         visit(node)
         return result.toString()
     }
