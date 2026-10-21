@@ -5,6 +5,7 @@ import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 
@@ -18,7 +19,10 @@ class OfferAccessibilityService : AccessibilityService() {
         runCatching {
             val engine = FlutterEngine(applicationContext)
             engine.dartExecutor.executeDartEntrypoint(
-                DartExecutor.DartEntrypoint.createDefault("backgroundOfferMain")
+                DartExecutor.DartEntrypoint(
+                    FlutterInjector.instance().flutterLoader().findAppBundlePath(),
+                    "backgroundOfferMain"
+                )
             )
             backgroundFlutterEngine = engine
             backgroundChannel = MethodChannel(
