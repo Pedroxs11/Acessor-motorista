@@ -735,4 +735,5 @@ Future<void> backgroundOfferMain() async {
       'destination': offer.destination,
     };
   });
+  await channel.invokeMethod<void>('processorReady');
 }
