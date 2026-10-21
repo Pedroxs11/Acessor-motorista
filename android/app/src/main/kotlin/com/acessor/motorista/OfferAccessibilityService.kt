@@ -12,28 +12,50 @@ import io.flutter.plugin.common.MethodChannel
 class OfferAccessibilityService : AccessibilityService() {
     private var backgroundFlutterEngine: FlutterEngine? = null
     private var backgroundChannel: MethodChannel? = null
+    private var backgroundReady = false
+    private val pendingOffers = ArrayDeque<Pair<String, String>>()
     private var lastBackgroundFingerprint: String = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         runCatching {
             val engine = FlutterEngine(applicationContext)
+            backgroundFlutterEngine = engine
+            val channel = MethodChannel(
+                engine.dartExecutor.binaryMessenger,
+                "com.acessor.motorista/background_offer_processor"
+            )
+            backgroundChannel = channel
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "processorReady") {
+                    backgroundReady = true
+                    result.success(true)
+                    while (pendingOffers.isNotEmpty()) {
+                        val (packageName, text) = pendingOffers.removeFirst()
+                        processOfferInBackground(packageName, text)
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
             engine.dartExecutor.executeDartEntrypoint(
                 DartExecutor.DartEntrypoint(
                     FlutterInjector.instance().flutterLoader().findAppBundlePath(),
                     "backgroundOfferMain"
                 )
             )
-            backgroundFlutterEngine = engine
-            backgroundChannel = MethodChannel(
-                engine.dartExecutor.binaryMessenger,
-                "com.acessor.motorista/background_offer_processor"
-            )
+        }.onFailure {
+            backgroundReady = false
         }
     }
 
     private fun processOfferInBackground(packageName: String, text: String) {
         if (text.isBlank()) return
+        if (!backgroundReady) {
+            if (pendingOffers.size >= 10) pendingOffers.removeFirst()
+            pendingOffers.addLast(packageName to text)
+            return
+        }
         val fingerprint = "$packageName|$text"
         if (fingerprint == lastBackgroundFingerprint) return
         val prefs = getSharedPreferences("driver_criteria", MODE_PRIVATE)
@@ -85,6 +107,8 @@ class OfferAccessibilityService : AccessibilityService() {
         backgroundFlutterEngine?.destroy()
         backgroundFlutterEngine = null
         backgroundChannel = null
+        backgroundReady = false
+        pendingOffers.clear()
         super.onDestroy()
     }
     private val targetPackages = setOf(
