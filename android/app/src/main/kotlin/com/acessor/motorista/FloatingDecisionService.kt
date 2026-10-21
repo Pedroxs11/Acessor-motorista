@@ -80,29 +80,45 @@ class FloatingDecisionService : Service() {
             typeface = Typeface.DEFAULT_BOLD
         }
         root.addView(headline)
-        val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun metric(title: String, amount: String, good: Boolean) {
-            if (amount.isBlank()) return
-            val column = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(5), 0, dp(5), 0)
+        fun metricsRow(vararg items: Triple<String, String, Boolean>): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                weightSum = items.size.toFloat()
+                items.forEach { (title, amount, good) ->
+                    val column = LinearLayout(this@FloatingDecisionService).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(5), dp(2), dp(5), dp(2))
+                    }
+                    column.addView(TextView(this@FloatingDecisionService).apply {
+                        text = title
+                        textSize = 9f
+                        setTextColor(Color.LTGRAY)
+                        maxLines = 1
+                    })
+                    column.addView(TextView(this@FloatingDecisionService).apply {
+                        text = amount.ifBlank { "—" }
+                        textSize = 15f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(if (good) Color.rgb(72, 230, 142) else Color.rgb(255, 104, 104))
+                        maxLines = 1
+                    })
+                    addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                }
             }
-            column.addView(TextView(this).apply {
-                text = title; textSize = 9f; setTextColor(Color.LTGRAY)
-            })
-            column.addView(TextView(this).apply {
-                text = amount; textSize = 15f; typeface = Typeface.DEFAULT_BOLD
-                setTextColor(if (good) Color.rgb(72, 230, 142) else Color.rgb(255, 104, 104))
-            })
-            metrics.addView(column)
         }
-        metric("VALOR", value, valueGood)
-        metric("R$/KM", perKm, perKmGood)
-        metric("R$/H", perHour, perHourGood)
-        metric("R$/MIN", perMinute, perHourGood)
-        metric("DISTÂNCIA", distance, distanceGood)
-        metric("TEMPO", time, timeGood)
-        root.addView(metrics)
+
+        // Top row: per-kilometer and per-minute economics. Bottom row: total trip time and distance.
+        val economics = metricsRow(
+            Triple("R$/KM", perKm, perKmGood),
+            Triple("R$/MIN", perMinute, perHourGood)
+        )
+        root.addView(economics)
+        val totals = metricsRow(
+            Triple("TEMPO TOTAL", time, timeGood),
+            Triple("KM TOTAL", distance, distanceGood)
+        )
+        root.addView(totals)
+
         val details = listOfNotNull(
             category.takeIf { it.isNotBlank() },
             rating.takeIf { it.isNotBlank() },
