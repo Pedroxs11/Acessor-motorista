@@ -2,6 +2,8 @@ package com.acessor.motorista
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Rect
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -16,105 +18,113 @@ class OfferAccessibilityService : AccessibilityService() {
         "global.dostavista.courier"
     )
 
+    private val moneyPattern = Regex("""r[$]\s*\d""", RegexOption.IGNORE_CASE)
+    private val distancePattern = Regex("""\d\s*(?:km|m)\b""", RegexOption.IGNORE_CASE)
+
+    private var lastTreeScanAt = 0L
+
+    private fun looksLikeOffer(text: String): Boolean =
+        moneyPattern.containsMatchIn(text) && distancePattern.containsMatchIn(text)
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in targetPackages) return
 
-        // Read the cheap event payload first. On busy offer screens, traversing
-        // the source tree before checking event.text can delay the useful offer.
+        var bestText = ""
+        var bestSource = "no_matching_app_node"
+
+        fun consider(candidate: String?, label: String): Boolean {
+            val trimmed = candidate.orEmpty().trim()
+            if (trimmed.isEmpty()) return false
+            if (looksLikeOffer(trimmed)) {
+                bestText = trimmed
+                bestSource = label
+                return true
+            }
+            if (trimmed.length > bestText.length) {
+                bestText = trimmed
+                bestSource = label
+            }
+            return false
+        }
+
         val eventText = runCatching {
             event.text.joinToString(" ") { item -> item?.toString().orEmpty().trim() }
                 .ifBlank { event.contentDescription?.toString().orEmpty().trim() }
         }.getOrDefault("")
+        var found = consider(eventText, "event_text")
 
-        val source = if (eventText.isBlank()) runCatching { event.source }.getOrNull() else null
-        val sourcePackage = runCatching { source?.packageName?.toString() }.getOrNull()
-        val sourceText = if (eventText.isBlank() &&
-            (sourcePackage == packageName || (source != null && sourcePackage.isNullOrBlank()))
-        ) {
-            runCatching { source?.let { buildText(it) } }.getOrNull().orEmpty().trim()
-        } else {
-            ""
-        }
+        val now = SystemClock.elapsedRealtime()
+        val scanTree = !found && now - lastTreeScanAt >= TREE_SCAN_INTERVAL_MS
+        if (scanTree) lastTreeScanAt = now
 
-        val root = if (eventText.isBlank() && sourceText.isBlank()) {
-            runCatching { rootInActiveWindow }.getOrNull()
-        } else {
-            null
-        }
-        val rootPackage = runCatching { root?.packageName?.toString() }.getOrNull()
-        val rootText = if (eventText.isBlank() && sourceText.isBlank() &&
-            rootPackage == packageName
-        ) {
-            runCatching { root?.let { buildText(it) } }.getOrNull().orEmpty().trim()
-        } else {
-            ""
+        var sourcePackage: String? = null
+        var rootPackage: String? = null
+
+        if (scanTree) {
+            val source = runCatching { event.source }.getOrNull()
+            sourcePackage = runCatching { source?.packageName?.toString() }.getOrNull()
+            if (source != null && (sourcePackage == packageName || sourcePackage.isNullOrBlank())) {
+                found = consider(runCatching { buildText(source) }.getOrNull(), "event_source")
+            }
         }
 
-        var matchingWindowText = ""
-        if (eventText.isBlank() && sourceText.isBlank() && rootText.isBlank()) {
-            matchingWindowText = runCatching {
-                windows.asSequence()
-                    .mapNotNull { window -> runCatching { window.root }.getOrNull() }
-                    .filter { windowRoot ->
-                        runCatching { windowRoot.packageName?.toString() == packageName }
-                            .getOrDefault(false)
-                    }
-                    .mapNotNull { windowRoot ->
-                        runCatching { buildText(windowRoot).trim() }.getOrNull()
-                    }
-                    .firstOrNull { it.isNotBlank() }
-                    .orEmpty()
-            }.getOrDefault("")
+        if (scanTree && !found) {
+            val root = runCatching { rootInActiveWindow }.getOrNull()
+            rootPackage = runCatching { root?.packageName?.toString() }.getOrNull()
+            if (root != null && rootPackage == packageName) {
+                found = consider(runCatching { buildText(root) }.getOrNull(), "active_window")
+            }
         }
 
-        val text = when {
-            eventText.isNotBlank() -> eventText
-            sourceText.isNotBlank() -> sourceText
-            rootText.isNotBlank() -> rootText
-            else -> matchingWindowText
+        if (scanTree && !found) {
+            val windowRoots = runCatching {
+                windows.mapNotNull { window -> runCatching { window.root }.getOrNull() }
+            }.getOrDefault(emptyList())
+            for (windowRoot in windowRoots) {
+                val owner = runCatching { windowRoot.packageName?.toString() }.getOrNull()
+                if (owner != packageName) continue
+                if (consider(runCatching { buildText(windowRoot) }.getOrNull(), "matching_window")) {
+                    found = true
+                    break
+                }
+            }
         }
+
         val captureSource = when {
-            eventText.isNotBlank() -> "event_text"
-            sourceText.isNotBlank() -> "event_source"
-            rootText.isNotBlank() -> "active_window"
-            matchingWindowText.isNotBlank() -> "matching_window"
+            found -> bestSource
+            bestText.isNotBlank() -> "partial:$bestSource"
             else -> "no_matching_app_node"
         }
 
-        val debugDetails = if (text.isBlank()) {
-            val sourceNodeCount = runCatching {
-                source?.let { countTextNodes(it) } ?: 0
-            }.getOrDefault(-1)
-            val rootNodeCount = runCatching {
-                root?.let { countTextNodes(it) } ?: 0
-            }.getOrDefault(-1)
-            val windowDiagnostics = runCatching {
-                windows.mapNotNull { window ->
-                    val windowRoot = runCatching { window.root }.getOrNull()
-                        ?: return@mapNotNull null
-                    val owner = runCatching {
-                        windowRoot.packageName?.toString()
-                    }.getOrNull() ?: "null"
-                    val nodeCount = countTextNodes(windowRoot)
-                    "$owner:nodes=$nodeCount"
-                }.take(8).joinToString(",")
-            }.getOrDefault("windows_unavailable")
-            "event=${event.eventType};sourcePkg=${sourcePackage ?: "null"};sourceNodes=$sourceNodeCount;eventTextChars=${eventText.length};activePkg=${rootPackage ?: "null"};activeNodes=$rootNodeCount;windows=[$windowDiagnostics]"
-        } else {
-            "event=${event.eventType};capture=$captureSource;chars=${text.length}"
+        val debugDetails = when {
+            found -> "event=${event.eventType};capture=$captureSource;chars=${bestText.length}"
+            packageName == NINE_NINE_PACKAGE && scanTree ->
+                "event=${event.eventType};best=$captureSource;bestChars=${bestText.length};" +
+                    "sourcePkg=${sourcePackage ?: "null"};activePkg=${rootPackage ?: "null"};" +
+                    "windows=[${windowDiagnostics()}]"
+            else ->
+                "event=${event.eventType};capture=$captureSource;chars=${bestText.length};scanned=$scanTree"
         }
 
         sendBroadcast(Intent(ACTION_OFFER_TEXT).apply {
             setPackage(applicationContext.packageName)
             putExtra(EXTRA_PACKAGE, packageName)
-            putExtra(EXTRA_TEXT, text)
+            putExtra(EXTRA_TEXT, bestText)
             putExtra(EXTRA_EVENT_TYPE, event.eventType)
             putExtra(EXTRA_CAPTURE_SOURCE, captureSource)
             putExtra(EXTRA_DEBUG_DETAILS, debugDetails)
         })
     }
+
+    private fun windowDiagnostics(): String = runCatching {
+        windows.mapNotNull { window ->
+            val windowRoot = runCatching { window.root }.getOrNull() ?: return@mapNotNull null
+            val owner = runCatching { windowRoot.packageName?.toString() }.getOrNull() ?: "null"
+            "$owner:nodes=${countTextNodes(windowRoot)}"
+        }.take(8).joinToString(",")
+    }.getOrDefault("windows_unavailable")
 
     private fun countTextNodes(node: AccessibilityNodeInfo): Int {
         var count = 0
@@ -132,13 +142,17 @@ class OfferAccessibilityService : AccessibilityService() {
     private fun buildText(node: AccessibilityNodeInfo): String {
         val result = StringBuilder()
         val visited = HashSet<String>()
+        val bounds = Rect()
         fun visit(current: AccessibilityNodeInfo?) {
             if (current == null) return
+            bounds.setEmpty()
+            runCatching { current.getBoundsInScreen(bounds) }
+            val where = bounds.flattenToString()
             current.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                if (visited.add("t:$it")) result.append(it).append(' ')
+                if (visited.add("$it@$where")) result.append(it).append(' ')
             }
             current.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                if (visited.add("d:$it")) result.append(it).append(' ')
+                if (visited.add("$it@$where")) result.append(it).append(' ')
             }
             for (i in 0 until current.childCount) {
                 runCatching { current.getChild(i) }.getOrNull()?.let(::visit)
@@ -157,5 +171,8 @@ class OfferAccessibilityService : AccessibilityService() {
         const val EXTRA_EVENT_TYPE = "event_type"
         const val EXTRA_CAPTURE_SOURCE = "capture_source"
         const val EXTRA_DEBUG_DETAILS = "debug_details"
+
+        private const val NINE_NINE_PACKAGE = "com.app99.driver"
+        private const val TREE_SCAN_INTERVAL_MS = 150L
     }
 }
